@@ -18,6 +18,7 @@ from docx import Document  # para exportar a Word (listado docentes)
 from docx.shared import Cm
 from docx.enum.section import WD_ORIENT
 import re
+from reporte_docentes_sunedu import register_sunedu_routes
 
 # === IMPORTS NUEVOS PARA CARTAS DE INVITACIÓN ===
 from docxtpl import DocxTemplate
@@ -58,6 +59,8 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+# ⬇️ NUEVO: registrar rutas del reporte SUNEDU
+register_sunedu_routes(app, get_db_connection)
 
 # ====== Datos comunes inyectados a todas las vistas ======
 @app.context_processor

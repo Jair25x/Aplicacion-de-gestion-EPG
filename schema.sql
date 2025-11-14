@@ -53,13 +53,13 @@ CREATE TABLE docente (
   nombres TEXT,
   apellidos TEXT,
   especialidad TEXT,
-  dni TEXT UNIQUE,              -- AHORA opcional (puede ser NULL), pero único cuando se define
+  dni TEXT UNIQUE,
   direccion TEXT,
   correo TEXT,
   telefono TEXT,
 
   titulo_profesional TEXT,
-  titulo_fecha TEXT,                 -- guardamos como texto "dd-mm-aaaa"
+  titulo_fecha TEXT,
   titulo_universidad TEXT,
 
   grado_magister TEXT,
@@ -71,7 +71,7 @@ CREATE TABLE docente (
   doctor_universidad TEXT,
 
   antecedentes TEXT,
-  tipo_docente TEXT,                 -- EXTERNO | INVITADO | ORDINARIZADO | LOCAL | etc.
+  tipo_docente TEXT,
 
   tiene_cv INTEGER NOT NULL DEFAULT 0,
   link_cv TEXT,
@@ -82,6 +82,7 @@ CREATE TABLE docente (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
 
 -- ============================
 -- TABLA: curso_programado (programación mensual)
@@ -144,4 +145,23 @@ CREATE TABLE docente_propuesto (
   UNIQUE (docente_id, periodo_id),
   FOREIGN KEY (docente_id) REFERENCES docente(id),
   FOREIGN KEY (periodo_id) REFERENCES periodo(id)
+);
+
+CREATE TABLE IF NOT EXISTS docente_carga_academica (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  docente_id INTEGER NOT NULL,
+  periodo_academico TEXT NOT NULL,   -- Ej: '2025-III'
+
+  horas_clase INTEGER NOT NULL DEFAULT 0,
+  horas_otras_actividades INTEGER NOT NULL DEFAULT 0,
+  horas_total INTEGER NOT NULL DEFAULT 0,
+
+  observaciones TEXT,
+  filial TEXT,                       -- Si quieres sobreescribir la filial del docente
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  UNIQUE (docente_id, periodo_academico),
+  FOREIGN KEY (docente_id) REFERENCES docente(id)
 );
