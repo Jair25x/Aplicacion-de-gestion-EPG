@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% if docente %}
+  {% set page_title = "Editar docente" %}
+{% else %}
+  {% set page_title = "Nuevo docente" %}
+{% endif %}
+
+{% block title %}{{ page_title }} – Gestión EPG{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ page_title }}</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<form method="post" class="row g-3">
+  <div class="col-md-6">
+    <label class="form-label">Nombre completo *</label>
+    <input type="text" name="nombre_completo"
+           value="{{ docente.nombre_completo if docente else '' }}"
+           class="form-control" required>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">
+      DNI <span class="text-muted small">(opcional)</span>
+    </label>
+    <input type="text" name="dni"
+           value="{{ docente.dni if docente else '' }}"
+           class="form-control">
+    <div class="form-text">
+      Puedes registrar al docente sin DNI y completarlo más adelante.
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Tipo docente (global)</label>
+    <select name="tipo_docente" class="form-select">
+      <option value="">Sin definir</option>
+      {% set tipo = docente.tipo_docente if docente else '' %}
+      <option value="LOCAL" {% if tipo == 'LOCAL' %}selected{% endif %}>Local</option>
+      <option value="ORDINARIZADO" {% if tipo == 'ORDINARIZADO' %}selected{% endif %}>Ordinarizado</option>
+      <option value="EXTERNO" {% if tipo == 'EXTERNO' %}selected{% endif %}>Externo</option>
+      <option value="INVITADO" {% if tipo == 'INVITADO' %}selected{% endif %}>Invitado</option>
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Especialidad</label>
+    <input type="text" name="especialidad"
+           value="{{ docente.especialidad if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Teléfono</label>
+    <input type="text" name="telefono"
+           value="{{ docente.telefono if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Correo electrónico</label>
+    <input type="email" name="correo"
+           value="{{ docente.correo if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Tiene CV</label>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" value="1" id="tiene_cv"
+             name="tiene_cv"
+             {% if docente and docente.tiene_cv %}checked{% endif %}>
+      <label class="form-check-label" for="tiene_cv">
+        Sí, CV recibido
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <label class="form-label">Link al CV (Drive, etc.)</label>
+    <input type="text" name="link_cv"
+           value="{{ docente.link_cv if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Fecha recepción CV</label>
+    <input type="text" name="fecha_recepcion_cv"
+           value="{{ docente.fecha_recepcion_cv if docente else '' }}"
+           class="form-control" placeholder="Ej. 10-11-2025">
+  </div>
+
+  <div class="col-12 mt-3 d-flex justify-content-between">
+    <a href="{{ url_for('docentes_list') }}" class="btn btn-outline-secondary">
+      ← Volver al listado
+    </a>
+    <button type="submit" class="btn btn-primary">
+      💾 Guardar
+    </button>
+  </div>
+</form>
+
+{% endblock %}

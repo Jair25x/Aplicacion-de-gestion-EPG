@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% if periodo %}
+  {% set page_title = "Editar período" %}
+{% else %}
+  {% set page_title = "Nuevo período" %}
+{% endif %}
+
+{% block title %}{{ page_title }} – Gestión EPG{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ page_title }}</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<form method="post" class="row g-3">
+  <div class="col-md-3">
+    <label class="form-label">Año *</label>
+    <input type="number" name="anio" class="form-control"
+           value="{{ periodo.anio if periodo else '' }}" required>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Mes (1–12) *</label>
+    <input type="number" name="mes" class="form-control"
+           value="{{ periodo.mes if periodo else '' }}" min="1" max="12" required>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Etiqueta *</label>
+    <input type="text" name="etiqueta" class="form-control"
+           value="{{ periodo.etiqueta if periodo else '' }}"
+           placeholder="Ej. Noviembre 2025" required>
+  </div>
+
+  <div class="col-12 d-flex justify-content-between mt-3">
+    <a href="{{ url_for('periodos_list') }}" class="btn btn-outline-secondary">
+      ← Volver al listado
+    </a>
+    <button type="submit" class="btn btn-primary">
+      💾 Guardar
+    </button>
+  </div>
+</form>
+{% endblock %}

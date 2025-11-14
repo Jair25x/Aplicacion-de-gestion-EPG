@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% if curso %}
+  {% set page_title = "Editar curso programado" %}
+{% else %}
+  {% set page_title = "Nuevo curso programado" %}
+{% endif %}
+
+{% block title %}{{ page_title }} – Programación EPG{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ page_title }}</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<form method="post" class="row g-3">
+  <div class="col-md-4">
+    <label class="form-label">Periodo *</label>
+    <select name="periodo_id" class="form-select" required>
+      {% for p in periodos %}
+        <option value="{{ p.id }}"
+          {% if curso and curso.periodo_id == p.id %}
+            selected
+          {% elif (not curso) and selected_periodo_id and selected_periodo_id|int == p.id %}
+            selected
+          {% endif %}>
+          {{ p.etiqueta }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Programa académico *</label>
+    <select name="programa_id" class="form-select" required>
+      {% for p in programas %}
+        <option value="{{ p.id }}"
+          {% if curso and curso.programa_id == p.id %}selected{% endif %}>
+          {{ p.facultad_nombre }} – {{ p.nombre_corto }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {# ==== DOCENTE OPCIONAL ==== #}
+  <div class="col-md-4">
+    <label class="form-label">Docente</label>
+    <select name="docente_id" class="form-select">
+      <option value=""
+        {% if not curso or not curso.docente_id %}
+          selected
+        {% endif %}>
+        Sin docente asignado (por definir)
+      </option>
+
+      {% for d in docentes %}
+        <option value="{{ d.id }}"
+          {% if curso and curso.docente_id == d.id %}selected{% endif %}>
+          {{ d.nombre_completo }} ({{ d.dni or 'sin DNI' }})
+        </option>
+      {% endfor %}
+    </select>
+    <small class="text-muted">
+      Puedes dejarlo en "Sin docente asignado" si aún no está definido.
+    </small>
+  </div>
+
+  <div class="col-md-2">
+    <label class="form-label">Ciclo</label>
+    <input type="text" name="ciclo"
+           value="{{ curso.ciclo if curso else '' }}"
+           class="form-control" placeholder="Ej. II, III, VI">
+  </div>
+
+  <div class="col-md-5">
+    <label class="form-label">Asignatura *</label>
+    <input type="text" name="asignatura"
+           value="{{ curso.asignatura if curso else '' }}"
+           class="form-control" required>
+  </div>
+
+  <div class="col-md-5">
+    <label class="form-label">Fechas (texto) *</label>
+    <input type="text" name="fechas_texto"
+           value="{{ curso.fechas_texto if curso else '' }}"
+           class="form-control"
+           placeholder="Ej. 07, 08, 09, 21, 22 y 23 de diciembre 2025"
+           required>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Remuneración (monto)</label>
+    <input type="text" name="remuneracion_monto"
+           value="{{ curso.remuneracion_monto if curso else '' }}"
+           class="form-control" placeholder="Ej. 5900">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Remuneración (texto)</label>
+    <input type="text" name="remuneracion_texto"
+           value="{{ curso.remuneracion_texto if curso else '' }}"
+           class="form-control" placeholder="Ej. S/. 5,900.00">
+    <small class="text-muted">Si lo dejas vacío y hay monto, se autogenera.</small>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">POI</label>
+    <input type="text" name="poi"
+           value="{{ curso.poi if curso else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Tipo docente (mes)</label>
+    {% set tipo_mes = curso.tipo_docente_mes if curso else '' %}
+    <select name="tipo_docente_mes" class="form-select">
+      <option value="">Sin definir</option>
+      <option value="LOCAL" {% if tipo_mes == 'LOCAL' %}selected{% endif %}>Local</option>
+      <option value="ORDINARIZADO" {% if tipo_mes == 'ORDINARIZADO' %}selected{% endif %}>Ordinarizado</option>
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Estado programación</label>
+    {% set estado = curso.estado_programacion if curso else 'PROPUESTO' %}
+    <select name="estado_programacion" class="form-select">
+      <option value="PROPUESTO" {% if estado == 'PROPUESTO' %}selected{% endif %}>Propuesto</option>
+      <option value="CONFIRMADO" {% if estado == 'CONFIRMADO' %}selected{% endif %}>Confirmado</option>
+      <option value="ENVIADO_RRHH" {% if estado == 'ENVIADO_RRHH' %}selected{% endif %}>Enviado a RRHH</option>
+      <option value="OBSERVADO" {% if estado == 'OBSERVADO' %}selected{% endif %}>Observado</option>
+      <option value="ANULADO" {% if estado == 'ANULADO' %}selected{% endif %}>Anulado</option>
+    </select>
+  </div>
+
+  <div class="col-md-9">
+    <label class="form-label">Observaciones</label>
+    <textarea name="observaciones" rows="2" class="form-control">{{ curso.observaciones if curso else '' }}</textarea>
+  </div>
+
+  {# ======== NUEVA SECCIÓN: DATOS PARA CARTA DE INVITACIÓN ======== #}
+  <div class="col-12">
+    <hr>
+    <h5>Datos para carta de invitación</h5>
+    <p class="text-muted small mb-2">
+      Estos datos se usan para armar automáticamente la carta de invitación (código, categoría y semanas).
+    </p>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Código de asignatura</label>
+    <input type="text" name="codigo"
+           value="{{ curso.codigo if curso else '' }}"
+           class="form-control"
+           placeholder="Ej. DU36, DK05, MS04">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Categoría</label>
+    <input type="text" name="categoria"
+           value="{{ curso.categoria if curso else '' }}"
+           class="form-control"
+           placeholder="Ej. FMA, FDO, INV">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">1ra semana (sem1)</label>
+    <input type="text" name="sem1"
+           value="{{ curso.sem1 if curso else '' }}"
+           class="form-control"
+           placeholder="Ej. 07, 08, 09">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">2da semana (sem2)</label>
+    <input type="text" name="sem2"
+           value="{{ curso.sem2 if curso else '' }}"
+           class="form-control"
+           placeholder="Ej. 21, 22, 23">
+  </div>
+
+  <div class="col-12 mt-3 d-flex justify-content-between">
+    <a href="{{ url_for('programacion') }}" class="btn btn-outline-secondary">
+      ← Volver a programación
+    </a>
+    <button type="submit" class="btn btn-primary">
+      💾 Guardar
+    </button>
+  </div>
+</form>
+
+{% endblock %}

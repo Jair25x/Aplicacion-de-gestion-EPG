@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+
+{% block title %}Docentes – Gestión EPG{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">Docentes registrados</h1>
+
+{# ======================= Mensajes flash ======================= #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }} mb-1 py-2">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{# ======================= Filtros (servidor) ======================= #}
+<form class="row g-3 mb-3" method="get">
+  <div class="col-md-3">
+    <label class="form-label">Buscar (nombre o DNI)</label>
+    <input
+      type="text"
+      name="q"
+      value="{{ q }}"
+      class="form-control"
+      placeholder="Ej. 'Luksic' o '23963570'"
+    >
+    <div class="form-text">
+      Filtro a nivel de base de datos (consulta en el servidor).
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Tipo de docente (global)</label>
+    <select name="tipo_docente" class="form-select">
+      <option value="">Todos</option>
+      <option value="LOCAL" {% if tipo_docente == 'LOCAL' %}selected{% endif %}>Local</option>
+      <option value="ORDINARIZADO" {% if tipo_docente == 'ORDINARIZADO' %}selected{% endif %}>Ordinarizado</option>
+      <option value="EXTERNO" {% if tipo_docente == 'EXTERNO' %}selected{% endif %}>Externo</option>
+      <option value="INVITADO" {% if tipo_docente == 'INVITADO' %}selected{% endif %}>Invitado</option>
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Período para “propuestos”</label>
+    <select name="periodo_propuesto_id" class="form-select">
+      <option value="">Cualquiera</option>
+      {% for p in periodos_global %}
+        <option value="{{ p.id }}"
+          {% if periodo_propuesto_id and periodo_propuesto_id|int == p.id %}selected{% endif %}>
+          {{ p.etiqueta }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3 d-flex align-items-end flex-wrap gap-2">
+    <div class="form-check">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        value="1"
+        id="solo_con_cv"
+        name="solo_con_cv"
+        {% if solo_con_cv %}checked{% endif %}
+      >
+      <label class="form-check-label" for="solo_con_cv">
+        Solo con CV
+      </label>
+    </div>
+    <div class="form-check ms-2">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        value="1"
+        id="solo_propuestos"
+        name="solo_propuestos"
+        {% if solo_propuestos %}checked{% endif %}
+      >
+      <label class="form-check-label" for="solo_propuestos">
+        Solo propuestos
+      </label>
+    </div>
+  </div>
+
+  <div class="col-12 d-flex justify-content-between align-items-center">
+    <div class="mt-2">
+      <button type="submit" class="btn btn-primary">
+        🔍 Buscar
+      </button>
+      <a href="{{ url_for('docentes_list') }}" class="btn btn-outline-secondary">
+        Limpiar
+      </a>
+    </div>
+    <div class="mt-2">
+      <a href="{{ url_for('docente_nuevo') }}" class="btn btn-success">
+        ➕ Nuevo docente
+      </a>
+    </div>
+  </div>
+</form>
+
+{# ======================= Resumen + filtro rápido (cliente) ======================= #}
+{% set ns = namespace(total_cv=0, total_propuestos=0, total_sin_dni=0) %}
+{% for d in docentes %}
+  {% if d.tiene_cv %}
+    {% set ns.total_cv = ns.total_cv + 1 %}
+  {% endif %}
+  {% if d.es_propuesto %}
+    {% set ns.total_propuestos = ns.total_propuestos + 1 %}
+  {% endif %}
+  {% if not d.dni %}
+    {% set ns.total_sin_dni = ns.total_sin_dni + 1 %}
+  {% endif %}
+{% endfor %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+  <div class="small text-muted mb-2 mb-md-0">
+    Mostrando <strong>{{ docentes|length }}</strong> docentes
+    {% if ns.total_cv > 0 %}
+      · con CV: <strong>{{ ns.total_cv }}</strong>
+    {% endif %}
+    {% if ns.total_propuestos > 0 %}
+      · propuestos (según filtros): <strong>{{ ns.total_propuestos }}</strong>
+    {% endif %}
+    {% if ns.total_sin_dni > 0 %}
+      · <span class="text-danger">sin DNI:</span>
+      <strong class="text-danger">{{ ns.total_sin_dni }}</strong>
+    {% endif %}
+  </div>
+
+  <div class="input-group input-group-sm" style="max-width: 320px;">
+    <span class="input-group-text">🔎 Filtro rápido</span>
+    <input
+      type="text"
+      id="docentes-search-live"
+      class="form-control"
+      placeholder="Filtrar en la tabla (todas las columnas)…"
+      autocomplete="off"
+    >
+  </div>
+</div>
+
+{# ======================= Tabla ======================= #}
+<div class="table-responsive shadow-sm">
+  <table id="tabla-docentes" class="table table-striped table-hover align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th style="width: 3rem;">#</th>
+        <th>Nombre completo</th>
+        <th>DNI</th>
+        <th>Tipo docente (global)</th>
+        <th>Especialidad</th>
+        <th>Teléfono</th>
+        <th>Correo</th>
+        <th>CV / recepción</th>
+        <th>Cursos período actual</th>
+        <th>Propuesto período seleccionado</th>
+        <th style="width: 7rem;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in docentes %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>
+          <strong>{{ d.nombre_completo }}</strong>
+        </td>
+        <td>
+          {% if d.dni %}
+            <code>{{ d.dni }}</code>
+          {% else %}
+            <span class="text-muted">—</span>
+            <span class="badge bg-light text-danger border border-danger ms-1">
+              DNI pendiente
+            </span>
+          {% endif %}
+        </td>
+        <td>
+          {% if d.tipo_docente %}
+            {% if d.tipo_docente == 'LOCAL' %}
+              <span class="badge bg-primary">Local</span>
+            {% elif d.tipo_docente == 'ORDINARIZADO' %}
+              <span class="badge bg-success">Ordinarizado</span>
+            {% elif d.tipo_docente == 'EXTERNO' %}
+              <span class="badge bg-info text-dark">Externo</span>
+            {% elif d.tipo_docente == 'INVITADO' %}
+              <span class="badge bg-secondary">Invitado</span>
+            {% else %}
+              <span class="badge bg-light text-dark">{{ d.tipo_docente }}</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>{{ d.especialidad or '-' }}</td>
+        <td>{{ d.telefono or '-' }}</td>
+        <td>
+          {% if d.correo %}
+            <a href="mailto:{{ d.correo }}">{{ d.correo }}</a>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if d.tiene_cv %}
+            <div>
+              <span class="badge bg-success">CV recibido</span>
+              {% if d.link_cv %}
+                <a href="{{ d.link_cv }}" target="_blank" rel="noopener" class="ms-1">
+                  📎 Ver
+                </a>
+              {% endif %}
+            </div>
+            <div class="small text-muted">
+              {% if d.fecha_recepcion_cv %}
+                Recibido: {{ d.fecha_recepcion_cv }}
+              {% else %}
+                Fecha no registrada
+              {% endif %}
+            </div>
+          {% else %}
+            <span class="text-muted">Sin CV</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if d.cantidad_cursos %}
+            <span class="badge bg-outline-primary border border-primary text-primary">
+              {{ d.cantidad_cursos }}
+            </span>
+          {% else %}
+            <span class="text-muted">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if periodo_propuesto_id %}
+            <form
+              method="post"
+              action="{{ url_for('toggle_docente_propuesto', docente_id=d.id) }}"
+              class="d-inline"
+            >
+              <input type="hidden" name="periodo_id" value="{{ periodo_propuesto_id }}">
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="tipo_docente" value="{{ tipo_docente }}">
+              <input type="hidden" name="periodo_propuesto_id" value="{{ periodo_propuesto_id }}">
+              <input type="hidden" name="solo_con_cv" value="{{ '1' if solo_con_cv else '' }}">
+              <input type="hidden" name="solo_propuestos" value="{{ '1' if solo_propuestos else '' }}">
+
+              {% if d.es_propuesto %}
+                <button type="submit" class="btn btn-sm btn-warning">
+                  ⭐ Propuesto (quitar)
+                </button>
+              {% else %}
+                <button type="submit" class="btn btn-sm btn-outline-warning">
+                  ☆ Marcar propuesto
+                </button>
+              {% endif %}
+            </form>
+          {% else %}
+            {% if d.es_propuesto %}
+              <span class="badge bg-warning text-dark">
+                Propuesto en algún período
+              </span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td>
+          <a
+            href="{{ url_for('docente_editar', docente_id=d.id) }}"
+            class="btn btn-sm btn-outline-primary"
+            title="Editar datos del docente"
+          >
+            ✏️ Editar
+          </a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="11" class="text-center text-muted py-4">
+          No se encontraron docentes con estos filtros.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ======================= JS – filtro en vivo ======================= #}
+<script>
+  (function () {
+    var input = document.getElementById('docentes-search-live');
+    var table = document.getElementById('tabla-docentes');
+    if (!input || !table) {
+      return;
+    }
+
+    var tbody = table.querySelector('tbody');
+    if (!tbody) {
+      return;
+    }
+
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+    input.addEventListener('input', function () {
+      var term = (this.value || '').toLowerCase().trim();
+
+      rows.forEach(function (row) {
+        if (!term) {
+          row.style.display = '';
+          return;
+        }
+
+        var text = (row.innerText || row.textContent || '').toLowerCase();
+        if (text.indexOf(term) !== -1) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    });
+  })();
+</script>
+
+{% endblock %}

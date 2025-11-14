@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+
+{% block title %}Programación – Docentes EPG{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="mb-1">Programación de docentes</h1>
+    <p class="text-muted mb-0">
+      Gestión de cursos programados por período, facultad y tipo de programa.
+    </p>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }} mb-1">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Filtros</h5>
+
+    <form class="row g-3 align-items-end" method="get">
+      <div class="col-md-3">
+        <label class="form-label">Período</label>
+        <select name="periodo_id" class="form-select">
+          {% for p in periodos_global %}
+            <option value="{{ p.id }}"
+              {% if periodo_id and periodo_id|int == p.id %}selected{% endif %}>
+              {{ p.etiqueta }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Facultad</label>
+        <select name="facultad_id" class="form-select">
+          <option value="">Todas</option>
+          {% for f in facultades_global %}
+            <option value="{{ f.id }}"
+              {% if facultad_id and facultad_id|int == f.id %}selected{% endif %}>
+              {{ f.nombre }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Tipo de programa</label>
+        <select name="tipo_programa" class="form-select">
+          {% for value, label in tipos_programa_global %}
+            <option value="{{ value }}"
+              {% if tipo_programa == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Tipo de docente (mes)</label>
+        <select name="tipo_docente_mes" class="form-select">
+          {% for value, label in tipos_docente_mes_global %}
+            <option value="{{ value }}"
+              {% if tipo_docente_mes == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12 d-flex justify-content-end gap-2 mt-2">
+        <button type="submit" class="btn btn-primary">
+          🔍 Aplicar filtros
+        </button>
+        <a href="{{ url_for('programacion') }}" class="btn btn-outline-secondary">
+          Limpiar filtros
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% set ns = namespace(doc=0, mae=0) %}
+{% for c in cursos %}
+  {% if c.programa_tipo == 'DOCTORADO' %}
+    {% set ns.doc = ns.doc + 1 %}
+  {% elif c.programa_tipo == 'MAESTRIA' %}
+    {% set ns.mae = ns.mae + 1 %}
+  {% endif %}
+{% endfor %}
+
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-3">
+  <div class="alert alert-info mb-0 w-100 w-lg-auto">
+    <div class="d-flex flex-column">
+      <div>
+        <strong>Período:</strong>
+        {{ periodo_info.etiqueta if periodo_info else '—' }}
+      </div>
+      <div>
+        <strong>Total cursos:</strong> {{ total_cursos }}
+        {% if total_cursos > 0 %}
+          <span class="small text-muted">
+            · Doctorados: {{ ns.doc }} · Maestrías: {{ ns.mae }}
+          </span>
+        {% endif %}
+      </div>
+      <div>
+        <strong>Remuneración total:</strong>
+        <span class="fw-bold text-success">
+          S/. {{ "%.2f"|format(total_remuneracion) }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex flex-column flex-md-row flex-wrap gap-2">
+    <a
+      class="btn btn-success"
+      href="{{ url_for('export_programacion_csv',
+                      periodo_id=periodo_id,
+                      facultad_id=facultad_id,
+                      tipo_programa=tipo_programa,
+                      tipo_docente_mes=tipo_docente_mes) }}"
+    >
+      📥 Exportar a Excel (CSV)
+    </a>
+
+    <form
+      method="get"
+      action="{{ url_for('export_programacion_docx') }}"
+      class="d-flex flex-wrap align-items-center gap-2"
+    >
+      <input type="hidden" name="periodo_id" value="{{ periodo_id or '' }}">
+      <input type="hidden" name="facultad_id" value="{{ facultad_id or '' }}">
+      <input type="hidden" name="tipo_programa" value="{{ tipo_programa or '' }}">
+      <input type="hidden" name="tipo_docente_mes" value="{{ tipo_docente_mes or '' }}">
+
+      <span class="small text-muted">Columnas extra:</span>
+
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+              type="checkbox"
+              value="1"
+              id="col_observaciones"
+              name="col_observaciones"
+              checked>
+        <label class="form-check-label small" for="col_observaciones">
+          Observaciones
+        </label>
+      </div>
+
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+              type="checkbox"
+              value="1"
+              id="col_universidad"
+              name="col_universidad"
+              checked>
+        <label class="form-check-label small" for="col_universidad">
+          Grado maximo - Universidad
+        </label>
+      </div>
+
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+              type="checkbox"
+              value="1"
+              id="col_telefono"
+              name="col_telefono">
+        <label class="form-check-label small" for="col_telefono">
+          Teléfono
+        </label>
+      </div>
+
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+              type="checkbox"
+              value="1"
+              id="col_correo"
+              name="col_correo">
+        <label class="form-check-label small" for="col_correo">
+          Correo
+        </label>
+      </div>
+
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+              type="checkbox"
+              value="1"
+              id="col_direccion"
+              name="col_direccion">
+        <label class="form-check-label small" for="col_direccion">
+          Dirección
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-outline-dark btn-sm">
+        📝 Exportar a Word
+      </button>
+    </form>
+
+    <a
+      class="btn btn-outline-primary"
+      href="{{ url_for('programacion_nueva', periodo_id=periodo_id) }}"
+    >
+      ➕ Nuevo curso programado
+    </a>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+  <div class="small text-muted mb-2 mb-md-0">
+    Mostrando <strong>{{ cursos|length }}</strong> registros en la tabla.
+  </div>
+
+  <div class="input-group input-group-sm" style="max-width: 320px;">
+    <span class="input-group-text">🔎 Filtro rápido</span>
+    <input
+      type="text"
+      id="programacion-search-live"
+      class="form-control"
+      placeholder="Filtrar en la tabla (todas las columnas)…"
+      autocomplete="off"
+    >
+  </div>
+</div>
+
+<div class="table-responsive shadow-sm">
+  <table id="tabla-programacion" class="table table-striped table-hover align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th style="width: 3rem;">#</th>
+        <th>Facultad</th>
+        <th>Tipo prog.</th>
+        <th>Programa</th>
+        <th>Docente</th>
+        <th>DNI</th>
+        <th>Tipo docente (mes)</th>
+        <th>Ciclo</th>
+        <th>Asignatura</th>
+        <th>Fechas</th>
+        <th>Remun.</th>
+        <th>POI</th>
+        <th>Observaciones</th>
+        <th class="text-center" style="width: 7rem;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cursos %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ c.facultad_nombre }}</td>
+        <td>
+          {% if c.programa_tipo == 'DOCTORADO' %}
+            <span class="badge bg-danger">Doctorado</span>
+          {% elif c.programa_tipo == 'MAESTRIA' %}
+            <span class="badge bg-primary">Maestría</span>
+          {% else %}
+            <span class="badge bg-secondary">{{ c.programa_tipo }}</span>
+          {% endif %}
+        </td>
+        <td>{{ c.programa_nombre }}</td>
+        <td>{{ c.docente_nombre or '' }}</td>
+        <td>
+          {% if c.dni_docente %}
+            <code>{{ c.dni_docente }}</code>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.tipo_docente_mes %}
+            {% if c.tipo_docente_mes == 'ORDINARIZADO' %}
+              <span class="badge bg-success">Ordinarizado</span>
+            {% elif c.tipo_docente_mes == 'LOCAL' %}
+              <span class="badge bg-info text-dark">Local</span>
+            {% else %}
+              <span class="badge bg-light text-dark">{{ c.tipo_docente_mes }}</span>
+            {% endif %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>{{ c.ciclo }}</td>
+        <td>{{ c.asignatura }}</td>
+        <td>{{ c.fechas_texto }}</td>
+        <td>{{ c.remuneracion_texto or '-' }}</td>
+        <td>{{ c.poi or '-' }}</td>
+        <td class="small">
+          {% if c.observaciones %}
+            {{ c.observaciones }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td class="text-center">
+          <a href="{{ url_for('programacion_editar', curso_id=c.curso_id) }}"
+             class="btn btn-sm btn-outline-primary mb-1"
+             title="Editar programación">
+            ✏️
+          </a>
+          <form method="post"
+                action="{{ url_for('programacion_eliminar', curso_id=c.curso_id) }}"
+                class="d-inline"
+                onsubmit="return confirm('¿Seguro que deseas eliminar este curso?');">
+            <input type="hidden" name="periodo_id" value="{{ periodo_id }}">
+            <input type="hidden" name="facultad_id" value="{{ facultad_id }}">
+            <input type="hidden" name="tipo_programa" value="{{ tipo_programa }}">
+            <input type="hidden" name="tipo_docente_mes" value="{{ tipo_docente_mes }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar">
+              🗑
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="14" class="text-center text-muted py-4">
+          No hay cursos con los filtros seleccionados.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    var input = document.getElementById('programacion-search-live');
+    var table = document.getElementById('tabla-programacion');
+    if (!input || !table) return;
+
+    var tbody = table.querySelector('tbody');
+    if (!tbody) return;
+
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+    input.addEventListener('input', function () {
+      var term = (this.value || '').toLowerCase().trim();
+
+      rows.forEach(function (row) {
+        if (!term) {
+          row.style.display = '';
+          return;
+        }
+        var text = (row.innerText || row.textContent || '').toLowerCase();
+        row.style.display = text.indexOf(term) !== -1 ? '' : 'none';
+      });
+    });
+  })();
+</script>
+
+{% endblock %}

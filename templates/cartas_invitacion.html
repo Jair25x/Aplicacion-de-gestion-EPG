@@ -1,0 +1,237 @@
+{# templates/cartas_invitacion.html #}
+{% extends "base.html" %}
+
+{% block title %}Cartas de invitación – Gestión Docentes EPG{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div>
+    <h1 class="mb-1">Cartas de invitación a docentes</h1>
+    <p class="text-muted mb-0">
+      Genera cartas de invitación a partir de la programación de cursos y la plantilla Word.
+    </p>
+  </div>
+  <div class="text-end small text-muted">
+    ✉️ Usa esta sección cuando la programación del período ya esté cerrada y quieras generar cartas masivamente.
+  </div>
+</div>
+
+{# Mensajes flash #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }} mb-1">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{# Filtro por período #}
+<div class="card shadow-sm border-0 mb-3">
+  <div class="card-body">
+    <form method="get" action="{{ url_for('cartas_invitacion') }}" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label for="periodo_id" class="form-label">Período</label>
+        <select name="periodo_id" id="periodo_id" class="form-select" required>
+          <option value="">-- Seleccionar período --</option>
+          {% for p in periodos %}
+            <option value="{{ p.id }}" {% if periodo_id and (periodo_id|string == p.id|string) %}selected{% endif %}>
+              {{ p.etiqueta }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary w-100">
+          🔍 Ver cursos del período
+        </button>
+      </div>
+      <div class="col-md-5 text-muted small">
+        <strong>Tip:</strong> primero verifica que los cursos tengan docente, código, categoría y semanas (<code>sem1</code>, <code>sem2</code>) antes de generar las cartas.
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if cursos and periodo_id %}
+  {# Panel de generación #}
+  <form method="post" action="{{ url_for('cartas_invitacion') }}">
+    <input type="hidden" name="periodo_id" value="{{ periodo_id }}" />
+
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label for="start_num" class="form-label">
+              Número inicial de carta (opcional)
+            </label>
+            <input
+              type="number"
+              name="start_num"
+              id="start_num"
+              class="form-control"
+              placeholder="Ej. 1"
+            />
+            <div class="form-text">
+              Si lo dejas vacío, se usará <code>000</code> en todas las cartas.
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="border rounded p-2 bg-light small">
+              <div class="fw-semibold mb-1">Leyenda de estados:</div>
+              <div class="d-flex flex-wrap gap-2">
+                <span class="badge bg-success">✅ Completo</span>
+                <span class="badge bg-warning text-dark">⚠️ Falta dato</span>
+                <span class="badge bg-secondary">SIN DOCENTE</span>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-5 text-end">
+            <button type="submit" class="btn btn-success">
+              ✉️ Generar cartas seleccionadas
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# Tabla de cursos #}
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="card-title mb-0">Cursos programados del período</h5>
+          <span class="small text-muted">
+            Total cursos: <strong>{{ cursos|length }}</strong>
+          </span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-striped align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width: 32px;">
+                  <input type="checkbox" id="check_all" class="form-check-input" />
+                </th>
+                <th>Estado</th>
+                <th>Programa</th>
+                <th>Asignatura</th>
+                <th>Docente</th>
+                <th>Código</th>
+                <th>Categoría</th>
+                <th>Sem1</th>
+                <th>Sem2</th>
+                <th>Tipo docente mes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in cursos %}
+                {# Evaluar campos requeridos para carta #}
+                {% set falta_docente = (not c.docente_nombre) %}
+                {% set falta_codigo = (not c.codigo) %}
+                {% set falta_categoria = (not c.categoria) %}
+                {% set falta_sem1 = (not c.sem1) %}
+                {% set falta_sem2 = (not c.sem2) %}
+                {% set falta_rem = (c.remuneracion_monto is none) %}
+
+                {% if (falta_docente or falta_codigo or falta_categoria or falta_sem1 or falta_sem2 or falta_rem) %}
+                  {% set estado_clase = "bg-warning text-dark" %}
+                  {% set estado_texto = "⚠️ Falta completar datos" %}
+                {% else %}
+                  {% set estado_clase = "bg-success" %}
+                  {% set estado_texto = "✅ Listo para carta" %}
+                {% endif %}
+
+                <tr>
+                  <td>
+                    <input
+                      type="checkbox"
+                      name="curso_id"
+                      value="{{ c.id }}"
+                      class="form-check-input"
+                    />
+                  </td>
+                  <td>
+                    <span class="badge {{ estado_clase }} small">
+                      {{ estado_texto }}
+                    </span>
+                    {% if falta_docente %}
+                      <span class="badge bg-secondary ms-1 small">SIN DOCENTE</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="fw-semibold">{{ c.programa_nombre }}</div>
+                    <div class="small text-muted">
+                      {{ c.programa_tipo }} · {{ c.programa_modalidad or '' }}
+                    </div>
+                  </td>
+                  <td class="small">
+                    <div class="fw-semibold">{{ c.asignatura }}</div>
+                    <div class="text-muted">{{ c.fechas_texto }}</div>
+                  </td>
+                  <td class="small">
+                    {% if c.docente_nombre %}
+                      {{ c.docente_nombre }}
+                    {% else %}
+                      <span class="text-muted">SIN DOCENTE</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if c.codigo %}
+                      <span class="badge bg-light text-dark border">{{ c.codigo }}</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">⚠️</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if c.categoria %}
+                      <span class="badge bg-light text-dark border">{{ c.categoria }}</span>
+                    {% else %}
+                      <span class="badge bg-warning text-dark">⚠️</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if c.sem1 %}
+                      {{ c.sem1 }}
+                    {% else %}
+                      <span class="text-warning">–</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {% if c.sem2 %}
+                      {{ c.sem2 }}
+                    {% else %}
+                      <span class="text-warning">–</span>
+                    {% endif %}
+                  </td>
+                  <td class="small">
+                    {{ c.tipo_docente_mes or '' }}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <script>
+    const checkAll = document.getElementById("check_all");
+    if (checkAll) {
+      checkAll.addEventListener("change", (e) => {
+        document
+          .querySelectorAll('input[type="checkbox"][name="curso_id"]')
+          .forEach((cb) => (cb.checked = e.target.checked));
+      });
+    }
+  </script>
+
+{% elif periodo_id %}
+  <div class="alert alert-info">
+    No hay cursos programados para el período seleccionado.
+  </div>
+{% endif %}
+{% endblock %}
