@@ -5,6 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 from dotenv import load_dotenv
+from typing import Optional, Tuple, List
 
 # ============================
 # Configuración de rutas / .env
@@ -18,23 +19,22 @@ if ENV_PATH.exists():
 DB_PATH = os.getenv("DOCENTES_DB_PATH", str(BASE_DIR / "docentes.db"))
 
 
-def parse_monto(monto_str: str | None) -> float | None:
+# ============================
+# Utilidades
+# ============================
+def parse_monto(monto_str: Optional[str]) -> Optional[float]:
     """
     Convierte 'S/. 5,900.00' -> 5900.00
-    Devuelve None si viene vacío o '-'.
+    Devuelve None si viene vacío o '-'/'--'.
     """
     if not monto_str:
         return None
     s = monto_str.strip()
     if s in ("-", "--", ""):
         return None
-
-    # Quitar prefijos de moneda y espacios
     for pref in ["S/.", "S/", "s/.", "s/"]:
         s = s.replace(pref, "")
     s = s.replace(" ", "")
-
-    # Quitar separador de miles y dejar solo punto decimal
     s = s.replace(",", "")
     try:
         return float(s)
@@ -42,36 +42,33 @@ def parse_monto(monto_str: str | None) -> float | None:
         return None
 
 
-def split_sem1_sem2(fechas_texto: str | None) -> tuple[str | None, str | None]:
+def split_sem1_sem2(fechas_texto: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """
-    A partir de un texto como:
-      '05, 06, 07, 19, 20 y 21 de diciembre 2025'
-    devuelve:
-      sem1 = '05, 06 y 07 de diciembre 2025'
-      sem2 = '19, 20 y 21 de diciembre 2025'
-    Si no se puede partir, devuelve (None, None).
+    '05, 06, 07, 19, 20 y 21 de diciembre 2025' ->
+      sem1='05, 06 y 07 de diciembre 2025'
+      sem2='19, 20 y 21 de diciembre 2025'
+    - Si hay >=4 días, parte por mitades (mitad inferior y superior).
+    - Conserva el sufijo a partir de la primera ocurrencia de 'de ' (p. ej., 'de diciembre 2025').
+    - Si no puede partir, retorna (None, None).
     """
     if not fechas_texto:
         return None, None
 
-    # Extraer todos los días como números
+    # Extraer todos los días (1-2 dígitos)
     dias = re.findall(r"\d{1,2}", fechas_texto)
     if len(dias) < 4:
-        # Si no hay al menos 4 días, no intentamos dividir
         return None, None
 
-    # Partimos en dos mitades (normalmente 3 y 3)
     mid = len(dias) // 2
     dias_sem1 = dias[:mid]
     dias_sem2 = dias[mid:]
 
-    # Intentar conservar el sufijo 'de diciembre 2025' o similar
     sufijo = ""
-    pos = fechas_texto.find("de ")
+    pos = fechas_texto.lower().find(" de ")
     if pos != -1:
-        sufijo = fechas_texto[pos:]  # ej. 'de diciembre 2025'
+        sufijo = fechas_texto[pos:].strip()
 
-    def formatear_bloque(dias_bloque: list[str]) -> str | None:
+    def formatear(dias_bloque: List[str]) -> Optional[str]:
         if not dias_bloque:
             return None
         if len(dias_bloque) == 1:
@@ -80,53 +77,161 @@ def split_sem1_sem2(fechas_texto: str | None) -> tuple[str | None, str | None]:
             cuerpo = f"{dias_bloque[0]} y {dias_bloque[1]}"
         else:
             cuerpo = ", ".join(dias_bloque[:-1]) + f" y {dias_bloque[-1]}"
-        return f"{cuerpo} {sufijo}".strip()
+        return f"{cuerpo} {sufijo}".strip() if sufijo else cuerpo
 
-    sem1 = formatear_bloque(dias_sem1)
-    sem2 = formatear_bloque(dias_sem2)
-    return sem1, sem2
+    return formatear(dias_sem1), formatear(dias_sem2)
 
 
-# 2) Mapeo de nombres de programa (lo que escribes en el contrato) -> nombre_corto real en BD
+# ============================
+# Resolución de Programas
+# ============================
+# Mapea el "label" que usas en el cuadro/contrato → nombre_corto EXACTO en la BD (sembrado por init_db.py)
 PROGRAMA_NAME_CANON = {
-    # Diferencias de texto respecto a init_db.py
+    # FCH – Doctorado en Ciencias de la Educación
     "Doctorado en Ciencias de la Educación 15va Promoción Presencial":
         "Doctorado en Ciencias de la Educación 15va Promoción",
     "Doctorado en Ciencias de la Educación 2da Promoción a Distancia":
         "Doctorado en Ciencias de la Educación 2da Promoción a Distancia/Presencial",
+    "Doctorado en Ciencias de la Educación 3ra Promoción a Distancia":
+        "Doctorado en Ciencias de la Educación 3ra Promoción a Distancia",
+    "Doctorado en Ciencias de la Educación 4ta Promoción a Distancia":
+        "Doctorado en Ciencias de la Educación 4ta Promoción a Distancia",
+    "Doctorado en Ciencias de la Educación 5ta Promoción a Distancia":
+        "Doctorado en Ciencias de la Educación 5ta Promoción a Distancia",
+
+    # FCH – Maestría en Docencia Universitaria
+    "Maestría en Docencia Universitaria 4ta Promoción a Distancia":
+        "Maestría en Docencia Universitaria 4ta Promoción a Distancia",
+    "Maestría en Docencia Universitaria 5ta Promoción a Distancia":
+        "Maestría en Docencia Universitaria 5ta Promoción a Distancia",
+    "Maestría en Docencia Universitaria 6ta Promoción a Distancia":
+        "Maestría en Docencia Universitaria 6ta Promoción a Distancia",
+    "Maestría en Docencia Universitaria 7ma Promoción a Distancia":
+        "Maestría en Docencia Universitaria 7ma Promoción a Distancia",
+
+    # FCS – Psicología y Ciencias de la Salud
+    "Doctorado en Psicología 1ra Promoción a Distancia":
+        "Doctorado en Psicología 1ra Promoción a Distancia",
+    "Doctorado en Psicología 3ra Promoción a Distancia":
+        "Doctorado en Psicología 3ra Promoción a Distancia",
+    "Doctorado en Ciencias de la Salud 2da Promoción a Distancia":
+        "Doctorado en Ciencias de la Salud 2da Promoción a Distancia",
+    "Doctorado en Ciencias de la Salud 3ra Promoción a Distancia":
+        "Doctorado en Ciencias de la Salud 3ra Promoción a Distancia",
+    "Doctorado en Ciencias de la Salud 4ta Promoción a Distancia":
+        "Doctorado en Ciencias de la Salud 4ta Promoción a Distancia",
+
+    # FIA – DMADS
     "Doctorado en Medio Ambiente y Desarrollo Sostenible 2da Promoción a Distancia":
-        "Doctorado en Medio Ambiente y Desarrollo Sostenible 2da Promoción Presencial",
+        "Doctorado en Medio Ambiente y Desarrollo Sostenible 2da Promoción Presencial / Distancia",
+    "Doctorado en Medio Ambiente y Desarrollo Sostenible 3ra Promoción a Distancia":
+        "Doctorado en Medio Ambiente y Desarrollo Sostenible 3ra Promoción a Distancia/Presencial",
+    "Doctorado en Medio Ambiente y Desarrollo Sostenible 4ta Promoción a Distancia":
+        "Doctorado en Medio Ambiente y Desarrollo Sostenible 4ta Promoción a Distancia",
+    "Doctorado en Medio Ambiente y Desarrollo Sostenible 5ta Promoción a Distancia":
+        "Doctorado en Medio Ambiente y Desarrollo Sostenible 5ta Promoción a Distancia",
+    "Doctorado en Medio Ambiente y Desarrollo Sostenible 6ta Promoción a Distancia":
+        "Doctorado en Medio Ambiente y Desarrollo Sostenible 6ta Promoción a Distancia",
     "Doctorado en Medio Ambiente y Desarrollo Sostenible 12va Promoción":
         "Doctorado en Medio Ambiente y Desarrollo Sostenible 12va Promoción Presencial",
+
+    # FIA – Maestrías Ingeniería Civil
+    "Maestría en Ingeniería Civil mención en Estructuras 4ta Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Estructuras 4ta Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Estructuras 5ta Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Estructuras 5ta Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Estructuras 6ta Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Estructuras 6ta Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Estructuras 7ma Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Estructuras 7ma Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 2da Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 2da Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 4ta Promoción a Distancia":
+        "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 4ta Promoción a Distancia",
+    "Maestría en Ingeniería Civil mención en Transportes 2da Promoción Presencial":
+        "Maestría en Ingeniería Civil mención en Transportes 2da Promoción Presencial",
+
+    # FCEC – Doctorados
     "Doctorado en Administración 2da Promoción a Distancia":
-        "Doctorado en Administración 2da Promoción a Distancia/presencial",
+        "Doctorado en Administración 2da Promoción a Distancia/Presencial",
+    "Doctorado en Administración 3ra Promoción a Distancia":
+        "Doctorado en Administración 3ra Promoción a Distancia",
     "Doctorado en Administración 4ta Promoción Presencial":
-        "Doctorado en Administración 4ta Promoción presencial",
-    # El resto de programas usan el mismo nombre que en el contrato
+        "Doctorado en Administración 4ta Promoción Presencial",
+    "Doctorado en Administración 4ta Promoción a Distancia":
+        "Doctorado en Administración 4ta Promoción a Distancia",
+    "Doctorado en Contabilidad 2da Promoción a Distancia":
+        "Doctorado en Contabilidad 2da Promoción a Distancia",
+
+    # FCEC – Maestrías
+    "Maestría en Administración de Negocios 2da Promoción a Distancia":
+        "Maestría en Administración de Negocios 2da Promoción a Distancia",
+    "Maestría en Administración de Negocios 3ra Promoción a Distancia":
+        "Maestría en Administración de Negocios 3ra Promoción a Distancia",
+    "Maestría en Administración de Negocios 4ta Promoción a Distancia":
+        "Maestría en Administración de Negocios 4ta Promoción a Distancia",
+    "Maestría en Contabilidad mención en Auditoría y Control Interno 3ra Promoción a Distancia":
+        "Maestría en Contabilidad mención en Auditoría y Control Interno 3ra Promoción a Distancia",
+    "Maestría en Contabilidad mención en Auditoría y Control Interno 4ta Promoción a Distancia":
+        "Maestría en Contabilidad mención en Auditoría y Control Interno 4ta Promoción a Distancia",
+    "Maestría en Contabilidad mención en Auditoría y Control Interno 5ta Promoción a Distancia":
+        "Maestría en Contabilidad mención en Auditoría y Control Interno 5ta Promoción a Distancia",
+
+    # FDCP – Derecho
+    "Doctorado en Derecho 2da Promoción a Distancia":
+        "Doctorado en Derecho 2da Promoción a Distancia",
+    "Doctorado en Derecho 3ra Promoción a Distancia":
+        "Doctorado en Derecho 3ra Promoción a Distancia",
+    "Doctorado en Derecho 4ta Promoción a Distancia":
+        "Doctorado en Derecho 4ta Promoción a Distancia",
+    "Doctorado en Derecho 5ta Promoción a Distancia":
+        "Doctorado en Derecho 5ta Promoción a Distancia",
+    "Doctorado en Derecho 6ta Promoción a Distancia":
+        "Doctorado en Derecho 6ta Promoción a Distancia",
+
+    # FDCP – Maestrías en Derecho
+    "Maestría en Derecho Civil y Comercial 2da Promoción a Distancia":
+        "Maestría en Derecho Civil y Comercial 2da Promoción a Distancia",
+    "Maestría en Derecho Registral y Notarial 2da Promoción a Distancia":
+        "Maestría en Derecho Registral y Notarial 2da Promoción a Distancia",
+    "Maestría en Derecho Constitucional 3ra Promoción a Distancia":
+        "Maestría en Derecho Constitucional 3ra Promoción a Distancia",
+    "Maestría en Derecho Civil y Comercial 3ra Promoción a Distancia":
+        "Maestría en Derecho Civil y Comercial 3ra Promoción a Distancia",
+    "Maestría en Derecho Constitucional 4ta Promoción a Distancia":
+        "Maestría en Derecho Constitucional 4ta Promoción a Distancia",
+    "Maestría en Derecho Registral y Notarial 3ra Promoción a Distancia":
+        "Maestría en Derecho Registral y Notarial 3ra Promoción a Distancia",
+    "Maestría en Derecho Constitucional 5ta Promoción a Distancia":
+        "Maestría en Derecho Constitucional 5ta Promoción a Distancia",
+    "Maestría en Derecho Registral y Notarial 4ta Promoción a Distancia":
+        "Maestría en Derecho Registral y Notarial 4ta Promoción a Distancia",
+    "Maestría en Derecho Civil y Comercial 4ta Promoción a Distancia":
+        "Maestría en Derecho Civil y Comercial 4ta Promoción a Distancia",
 }
 
-# 3) Programas nuevos que podrían no existir aún en programa_academico
+# Programas “posiblemente nuevos” (fallback). Hoy no debería usarse porque init_db ya los incluye.
 NEW_PROGRAM_INFO = {
     "Doctorado en Ciencias de la Educación 3ra Promoción a Distancia": {
         "facultad": "Facultad de Ciencias y Humanidades",
         "tipo": "DOCTORADO",
         "promocion": "3ra Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": "UNIVERSIDAD CÉSAR VALLEJO",
+        "universidad": None,
     },
     "Doctorado en Psicología 3ra Promoción a Distancia": {
         "facultad": "Facultad de Ciencias de la Salud",
         "tipo": "DOCTORADO",
         "promocion": "3ra Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": "UNIVERSIDAD PRIVADA CÉSAR VALLEJO",
+        "universidad": None,
     },
     "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 2da Promoción a Distancia": {
         "facultad": "Facultad de Ingenierías y Arquitectura",
         "tipo": "MAESTRIA",
         "promocion": "2da Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": "UNIVERSIDAD MAYOR DE SAN SIMÓN",
+        "universidad": None,
     },
 }
 
@@ -135,37 +240,29 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
     """
     Dado el texto de PROGRAMA que usas en tu lista,
     devuelve el id de programa_academico.
-    Crea el programa si está en NEW_PROGRAM_INFO y aún no existe.
+    - Resuelve con PROGRAMA_NAME_CANON.
+    - Si no existe en la BD y está en NEW_PROGRAM_INFO => lo crea.
     """
     db_name = PROGRAMA_NAME_CANON.get(programa_label, programa_label)
 
-    # Intentar encontrar el programa
-    cursor.execute(
-        "SELECT id FROM programa_academico WHERE nombre_corto = ?",
-        (db_name,),
-    )
+    cursor.execute("SELECT id FROM programa_academico WHERE nombre_corto = ?", (db_name,))
     row = cursor.fetchone()
     if row:
         return row[0]
 
-    # Si no existe, ver si está definido como nuevo
     info = NEW_PROGRAM_INFO.get(db_name)
     if not info:
         raise RuntimeError(
             f"❌ No se encontró el programa '{db_name}' en la BD "
-            f"y tampoco está definido en NEW_PROGRAM_INFO."
+            f"y tampoco está definido en NEW_PROGRAM_INFO. "
+            f"Revisa el mapeo PROGRAMA_NAME_CANON."
         )
 
-    # Buscar facultad
-    cursor.execute(
-        "SELECT id FROM facultad WHERE nombre = ?",
-        (info["facultad"],),
-    )
+    # Crear programa nuevo si procede (fallback)
+    cursor.execute("SELECT id FROM facultad WHERE nombre = ?", (info["facultad"],))
     fac = cursor.fetchone()
     if not fac:
-        raise RuntimeError(
-            f"❌ No se encontró la facultad '{info['facultad']}' en la tabla facultad."
-        )
+        raise RuntimeError(f"❌ No se encontró la facultad '{info['facultad']}' en la tabla facultad.")
 
     facultad_id = fac[0]
     cursor.execute(
@@ -190,12 +287,11 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
     return new_id
 
 
-# 4) Definición de cursos de Diciembre 2025 (sin docente asignado)
+# ============================
+# Datos – Cursos DICIEMBRE 2025 (sin docente asignado)
+# ============================
 cursos_diciembre = [
-    # ============================
-    # Facultad de Ciencias y Humanidades
-    # Doctorado en Ciencias de la Educación
-    # ============================
+    # ========= FCH – Doctorado en Ciencias de la Educación =========
     {
         "nro": 1,
         "programa": "Doctorado en Ciencias de la Educación 15va Promoción Presencial",
@@ -247,7 +343,7 @@ cursos_diciembre = [
         "observaciones": "Dra. Liliam Lucy Campos Cornejo – 980580459 – Confirmó el 21/10 en reunión.",
     },
 
-    # Maestría en Docencia Universitaria
+    # ========= FCH – Maestría en Docencia Universitaria =========
     {
         "nro": 6,
         "programa": "Maestría en Docencia Universitaria 4ta Promoción a Distancia",
@@ -289,10 +385,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # ============================
-    # Facultad de Ciencias de la Salud
-    # Doctorado en Psicología
-    # ============================
+    # ========= FCS – Doctorado en Psicología / Ciencias de la Salud =========
     {
         "nro": 10,
         "programa": "Doctorado en Psicología 1ra Promoción a Distancia",
@@ -309,12 +402,10 @@ cursos_diciembre = [
         "ciclo": "II",
         "asignatura": "SEMINARIO DE TESIS I",
         "fechas": "12, 13, 14, 26, 27 y 28 de diciembre 2025",
-        "remuneracion_texto": None,  # no se consigna
+        "remuneracion_texto": None,
         "poi": None,
         "observaciones": "Llevará con el Doctorado en Ciencias de la Salud 4ta Promoción a Distancia.",
     },
-
-    # Doctorado en Ciencias de la Salud
     {
         "nro": 12,
         "programa": "Doctorado en Ciencias de la Salud 2da Promoción a Distancia",
@@ -346,10 +437,7 @@ cursos_diciembre = [
         "observaciones": "Llevará con el Doctorado en Psicología 3ra Promoción a Distancia.",
     },
 
-    # ============================
-    # Facultad de Ingenierías y Arquitectura
-    # Doctorado en Medio Ambiente y Desarrollo Sostenible
-    # ============================
+    # ========= FIA – DMADS =========
     {
         "nro": 15,
         "programa": "Doctorado en Medio Ambiente y Desarrollo Sostenible 2da Promoción a Distancia",
@@ -411,7 +499,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # Maestría en Ingeniería Civil
+    # ========= FIA – Maestría en Ingeniería Civil =========
     {
         "nro": 21,
         "programa": "Maestría en Ingeniería Civil mención en Estructuras 4ta Promoción a Distancia",
@@ -483,10 +571,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # ============================
-    # Facultad de Ciencias Económicas y Contables
-    # Doctorado en Administración
-    # ============================
+    # ========= FCEC – Doctorados =========
     {
         "nro": 28,
         "programa": "Doctorado en Administración 2da Promoción a Distancia",
@@ -528,7 +613,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # Doctorado en Contabilidad
+    # ========= FCEC – Doctorado en Contabilidad =========
     {
         "nro": 32,
         "programa": "Doctorado en Contabilidad 2da Promoción a Distancia",
@@ -540,7 +625,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # Maestría en Administración de Negocios
+    # ========= FCEC – MAN / MCONT-AUD =========
     {
         "nro": 33,
         "programa": "Maestría en Administración de Negocios 2da Promoción a Distancia",
@@ -571,8 +656,6 @@ cursos_diciembre = [
         "poi": "257399",
         "observaciones": None,
     },
-
-    # Maestría en Contabilidad mención en Auditoría y Control Interno
     {
         "nro": 36,
         "programa": "Maestría en Contabilidad mención en Auditoría y Control Interno 3ra Promoción a Distancia",
@@ -599,15 +682,12 @@ cursos_diciembre = [
         "ciclo": "III",
         "asignatura": "TESIS I",
         "fechas": "05, 06, 07, 19, 20 y 21 de diciembre 2025",
-        "remuneracion_texto": None,  # viene '-'
+        "remuneracion_texto": None,
         "poi": None,
         "observaciones": "Llevarán con Maestría en Administración 3ra Promoción.",
     },
 
-    # ============================
-    # Facultad de Derecho y Ciencia Política
-    # Doctorado en Derecho
-    # ============================
+    # ========= FDCP – Doctorado en Derecho =========
     {
         "nro": 39,
         "programa": "Doctorado en Derecho 2da Promoción a Distancia",
@@ -659,7 +739,7 @@ cursos_diciembre = [
         "observaciones": None,
     },
 
-    # Maestría en Derecho
+    # ========= FDCP – Maestrías en Derecho =========
     {
         "nro": 44,
         "programa": "Maestría en Derecho Civil y Comercial 2da Promoción a Distancia",
@@ -753,28 +833,27 @@ cursos_diciembre = [
 ]
 
 
+# ============================
+# Main
+# ============================
 def main():
     print(f"Usando base de datos: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON;")
     cursor = conn.cursor()
 
-    # 1) Obtener periodo Diciembre 2025
-    cursor.execute(
-        "SELECT id FROM periodo WHERE anio = ? AND mes = ?",
-        (2025, 12),
-    )
+    # 1) Verificar período Diciembre 2025
+    cursor.execute("SELECT id FROM periodo WHERE anio = ? AND mes = ?", (2025, 12))
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise RuntimeError(
             "❌ No se encontró el periodo 2025-12. "
-            "Primero crea 'Diciembre 2025' en la tabla periodo."
+            "Primero crea 'Diciembre 2025' en la tabla periodo (init_db.py ya lo hace)."
         )
-
     periodo_dic_2025_id = row[0]
     print(f"Periodo Diciembre 2025 ID: {periodo_dic_2025_id}")
 
-    # 5) Insertar cursos (sin docente_id) de forma idempotente
     insertados = 0
     saltados = 0
 
@@ -792,7 +871,7 @@ def main():
 
         sem1_texto, sem2_texto = split_sem1_sem2(fechas_texto)
 
-        # Evitar duplicados: mismo periodo, programa, ciclo, asignatura y fechas
+        # Idempotencia: mismo periodo, programa, ciclo, asignatura y fechas_texto
         cursor.execute(
             """
             SELECT id FROM curso_programado

@@ -78,6 +78,23 @@
         </select>
       </div>
 
+      <!-- NUEVO: filtros por matriculados -->
+      <div class="col-md-3">
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" id="solo_matriculados" name="solo_matriculados" value="1"
+                 {% if solo_matriculados %}checked{% endif %}>
+          <label class="form-check-label" for="solo_matriculados">
+            Solo con matriculados
+          </label>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Mín. matriculados</label>
+        <input type="number" min="0" class="form-control" name="min_matriculados"
+               value="{{ min_matriculados or '' }}" placeholder="Ej. 10">
+      </div>
+
       <div class="col-12 d-flex justify-content-end gap-2 mt-2">
         <button type="submit" class="btn btn-primary">
           🔍 Aplicar filtros
@@ -124,17 +141,21 @@
   </div>
 
   <div class="d-flex flex-column flex-md-row flex-wrap gap-2">
+    <!-- Exportar CSV: pasar nuevos filtros -->
     <a
       class="btn btn-success"
       href="{{ url_for('export_programacion_csv',
                       periodo_id=periodo_id,
                       facultad_id=facultad_id,
                       tipo_programa=tipo_programa,
-                      tipo_docente_mes=tipo_docente_mes) }}"
+                      tipo_docente_mes=tipo_docente_mes,
+                      solo_matriculados='1' if solo_matriculados else '',
+                      min_matriculados=min_matriculados) }}"
     >
       📥 Exportar a Excel (CSV)
     </a>
 
+    <!-- Exportar DOCX: columnas extra + pasar nuevos filtros -->
     <form
       method="get"
       action="{{ url_for('export_programacion_docx') }}"
@@ -144,16 +165,18 @@
       <input type="hidden" name="facultad_id" value="{{ facultad_id or '' }}">
       <input type="hidden" name="tipo_programa" value="{{ tipo_programa or '' }}">
       <input type="hidden" name="tipo_docente_mes" value="{{ tipo_docente_mes or '' }}">
+      <input type="hidden" name="solo_matriculados" value="{{ '1' if solo_matriculados else '' }}">
+      <input type="hidden" name="min_matriculados" value="{{ min_matriculados or '' }}">
 
       <span class="small text-muted">Columnas extra:</span>
 
       <div class="form-check form-check-inline mb-0">
         <input class="form-check-input"
-              type="checkbox"
-              value="1"
-              id="col_observaciones"
-              name="col_observaciones"
-              checked>
+               type="checkbox"
+               value="1"
+               id="col_observaciones"
+               name="col_observaciones"
+               checked>
         <label class="form-check-label small" for="col_observaciones">
           Observaciones
         </label>
@@ -161,22 +184,35 @@
 
       <div class="form-check form-check-inline mb-0">
         <input class="form-check-input"
-              type="checkbox"
-              value="1"
-              id="col_universidad"
-              name="col_universidad"
-              checked>
+               type="checkbox"
+               value="1"
+               id="col_universidad"
+               name="col_universidad"
+               checked>
         <label class="form-check-label small" for="col_universidad">
-          Grado maximo - Universidad
+          Grado máximo – Universidad
+        </label>
+      </div>
+
+      <!-- NUEVO: permitir columna Matriculados en el Word -->
+      <div class="form-check form-check-inline mb-0">
+        <input class="form-check-input"
+               type="checkbox"
+               value="1"
+               id="col_matriculados"
+               name="col_matriculados"
+               checked>
+        <label class="form-check-label small" for="col_matriculados">
+          Matriculados
         </label>
       </div>
 
       <div class="form-check form-check-inline mb-0">
         <input class="form-check-input"
-              type="checkbox"
-              value="1"
-              id="col_telefono"
-              name="col_telefono">
+               type="checkbox"
+               value="1"
+               id="col_telefono"
+               name="col_telefono">
         <label class="form-check-label small" for="col_telefono">
           Teléfono
         </label>
@@ -184,10 +220,10 @@
 
       <div class="form-check form-check-inline mb-0">
         <input class="form-check-input"
-              type="checkbox"
-              value="1"
-              id="col_correo"
-              name="col_correo">
+               type="checkbox"
+               value="1"
+               id="col_correo"
+               name="col_correo">
         <label class="form-check-label small" for="col_correo">
           Correo
         </label>
@@ -195,10 +231,10 @@
 
       <div class="form-check form-check-inline mb-0">
         <input class="form-check-input"
-              type="checkbox"
-              value="1"
-              id="col_direccion"
-              name="col_direccion">
+               type="checkbox"
+               value="1"
+               id="col_direccion"
+               name="col_direccion">
         <label class="form-check-label small" for="col_direccion">
           Dirección
         </label>
@@ -209,12 +245,20 @@
       </button>
     </form>
 
+    <!-- Atajo útil -->
     <a
       class="btn btn-outline-primary"
       href="{{ url_for('programacion_nueva', periodo_id=periodo_id) }}"
     >
       ➕ Nuevo curso programado
     </a>
+
+    <!-- Link directo a cartas por período (si aplica) -->
+    {% if periodo_id %}
+    <a class="btn btn-outline-secondary" href="{{ url_for('cartas_invitacion', periodo_id=periodo_id) }}">
+      ✉️ Cartas de invitación
+    </a>
+    {% endif %}
   </div>
 </div>
 
@@ -251,6 +295,7 @@
         <th>Fechas</th>
         <th>Remun.</th>
         <th>POI</th>
+        <th>Matriculados</th>   {# <-- AQUI #}
         <th>Observaciones</th>
         <th class="text-center" style="width: 7rem;">Acciones</th>
       </tr>
@@ -296,6 +341,9 @@
         <td>{{ c.fechas_texto }}</td>
         <td>{{ c.remuneracion_texto or '-' }}</td>
         <td>{{ c.poi or '-' }}</td>
+        <!-- NUEVO: valor de matriculados -->
+        <td>{{ c.matriculados if c.matriculados is not none else '—' }}</td>
+
         <td class="small">
           {% if c.observaciones %}
             {{ c.observaciones }}
@@ -325,7 +373,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="14" class="text-center text-muted py-4">
+        <td colspan="15" class="text-center text-muted py-4">
           No hay cursos con los filtros seleccionados.
         </td>
       </tr>

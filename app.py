@@ -53,11 +53,38 @@ PLANTILLA_CARTA = BASE_DIR / "plantilla_carta.docx"
 app = Flask(__name__)
 app.secret_key = "cambia-esto-por-algo-mas-seguro"  # para mensajes flash
 
-
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def ensure_columns():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    def table_exists(table):
+        row = cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                          (table,)).fetchone()
+        return row is not None
+
+    def column_exists(table, col):
+        rows = cur.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(r["name"] == col for r in rows)
+
+    # Solo si existe la tabla curso_programado
+    if table_exists("curso_programado"):
+        if not column_exists("curso_programado", "matriculados"):
+            cur.execute("ALTER TABLE curso_programado ADD COLUMN matriculados INTEGER NULL")
+
+        for col, ddl in [("codigo","TEXT"), ("categoria","TEXT"), ("sem1","TEXT"), ("sem2","TEXT")]:
+            if not column_exists("curso_programado", col):
+                cur.execute(f"ALTER TABLE curso_programado ADD COLUMN {col} {ddl}")
+
+    conn.commit()
+    conn.close()
+    
+ensure_columns()
+
 
 # ⬇️ NUEVO: registrar rutas del reporte SUNEDU
 register_sunedu_routes(app, get_db_connection)
@@ -579,15 +606,12 @@ def programacion():
     facultad_id = request.args.get("facultad_id", type=int)
     tipo_programa = request.args.get("tipo_programa", default="", type=str)
     tipo_docente_mes = request.args.get("tipo_docente_mes", default="", type=str)
-
-    # Si no mandan período, tomamos el último disponible
-    if not periodo_id and periodos_global:
-        periodo_id = periodos_global[0]["id"]
-
-    periodo_info = None
-    if periodo_id:
-        cur.execute("SELECT * FROM periodo WHERE id = ?", (periodo_id,))
-        periodo_info = cur.fetchone()
+    solo_matriculados = request.args.get("solo_matriculados", default="", type=str) == "1"
+    min_matriculados = request.args.get("min_matriculados", default="", type=str)
+    try:
+        min_matriculados_int = int(min_matriculados) if min_matriculados else None
+    except ValueError:
+        min_matriculados_int = None
 
     # =========================
     # Construcción dinámica del WHERE
@@ -611,6 +635,13 @@ def programacion():
         filtros.append("cp.tipo_docente_mes = ?")
         params.append(tipo_docente_mes)
 
+    if solo_matriculados:
+        filtros.append("(COALESCE(pp.matriculados, cp.matriculados) IS NOT NULL AND COALESCE(pp.matriculados, cp.matriculados) > 0)")
+
+    if min_matriculados_int is not None:
+        filtros.append("(COALESCE(pp.matriculados, cp.matriculados) >= ?)")
+        params.append(min_matriculados_int)
+
     where_clause = " AND ".join(filtros) if filtros else "1 = 1"
 
     # =========================
@@ -618,24 +649,28 @@ def programacion():
     # =========================
     sql_cursos = f"""
         SELECT
-          cp.id AS curso_id,
-          f.nombre AS facultad_nombre,
-          pa.tipo AS programa_tipo,
-          pa.nombre_corto AS programa_nombre,
-          COALESCE(d.nombre_completo, '') AS docente_nombre,
-          cp.dni_docente,
-          cp.tipo_docente_mes,
-          cp.ciclo,
-          cp.asignatura,
-          cp.fechas_texto,
-          cp.remuneracion_texto,
-          cp.poi,
-          cp.observaciones,             -- 🔴 Observaciones en el listado
-          pa.id AS programa_id
+            cp.id AS curso_id,
+            f.nombre AS facultad_nombre,
+            pa.tipo AS programa_tipo,
+            pa.nombre_corto AS programa_nombre,
+            COALESCE(d.nombre_completo, '') AS docente_nombre,
+            cp.dni_docente,
+            cp.tipo_docente_mes,
+            cp.ciclo,
+            cp.asignatura,
+            cp.fechas_texto,
+            cp.remuneracion_texto,
+            cp.poi,
+            cp.observaciones,
+            pa.id AS programa_id,
+            COALESCE(pp.matriculados, cp.matriculados) AS matriculados
         FROM curso_programado cp
         JOIN programa_academico pa ON cp.programa_id = pa.id
         JOIN facultad f ON pa.facultad_id = f.id
         LEFT JOIN docente d ON cp.docente_id = d.id
+        LEFT JOIN programa_periodo pp
+                ON pp.programa_id = pa.id
+                AND pp.periodo_id = cp.periodo_id
         WHERE {where_clause}
         ORDER BY f.nombre, pa.tipo, pa.nombre_corto, cp.ciclo, cp.asignatura
     """
@@ -658,7 +693,7 @@ def programacion():
     total_cursos = len(cursos)
 
     conn.close()
-
+    periodo_info = None 
     return render_template(
         "cursos_programados.html",
         # filtros
@@ -676,6 +711,8 @@ def programacion():
         cursos=cursos,
         total_cursos=total_cursos,
         total_remuneracion=total_remuneracion,
+        solo_matriculados=solo_matriculados,
+        min_matriculados=min_matriculados,
     )
 
 
@@ -1042,6 +1079,12 @@ def export_programacion_csv():
     facultad_id = request.args.get("facultad_id")
     tipo_programa = request.args.get("tipo_programa", "")
     tipo_docente_mes = request.args.get("tipo_docente_mes", "")
+    solo_matriculados = request.args.get("solo_matriculados", "") == "1"
+    min_matriculados = request.args.get("min_matriculados", "")
+    try:
+        min_matriculados_int = int(min_matriculados) if min_matriculados else None
+    except ValueError:
+        min_matriculados_int = None
 
     conn = get_db_connection()
 
@@ -1072,6 +1115,13 @@ def export_programacion_csv():
     if tipo_docente_mes:
         where_clauses.append("cp.tipo_docente_mes = ?")
         params.append(tipo_docente_mes)
+        
+    if solo_matriculados:
+        where_clauses.append("(COALESCE(pp.matriculados, cp.matriculados) IS NOT NULL AND COALESCE(pp.matriculados, cp.matriculados) > 0)")
+
+    if min_matriculados_int is not None:
+        where_clauses.append("(COALESCE(pp.matriculados, cp.matriculados) >= ?)")
+        params.append(min_matriculados_int)
 
     where_sql = ""
     if where_clauses:
@@ -1096,12 +1146,16 @@ def export_programacion_csv():
             cp.categoria,
             cp.sem1,
             cp.sem2,
-            p.etiqueta AS periodo
+            p.etiqueta AS periodo,
+            COALESCE(pp.matriculados, cp.matriculados) AS matriculados
         FROM curso_programado cp
         LEFT JOIN docente d ON d.id = cp.docente_id
         JOIN programa_academico pa ON pa.id = cp.programa_id
         JOIN facultad f ON f.id = pa.facultad_id
         JOIN periodo p ON p.id = cp.periodo_id
+        LEFT JOIN programa_periodo pp
+            ON pp.programa_id = pa.id
+            AND pp.periodo_id = cp.periodo_id
         {where_sql}
         ORDER BY
             f.nombre,
@@ -1136,6 +1190,7 @@ def export_programacion_csv():
             "Sem1",
             "Sem2",
             "Periodo",
+            "Matriculados",
         ]
     )
     for r in rows:
@@ -1159,6 +1214,7 @@ def export_programacion_csv():
                 r["sem1"] or "",
                 r["sem2"] or "",
                 r["periodo"] or "",
+                r["matriculados"] or "",
             ]
         )
 
@@ -1284,6 +1340,14 @@ def export_programacion_docx():
     col_correo = request.args.get("col_correo") == "1"
     col_direccion = request.args.get("col_direccion") == "1"
 
+    col_matriculados = request.args.get("col_matriculados") == "1"
+    solo_matriculados = request.args.get("solo_matriculados") == "1"
+    min_matriculados = request.args.get("min_matriculados", "")
+    try:
+        min_matriculados_int = int(min_matriculados) if min_matriculados else None
+    except ValueError:
+        min_matriculados_int = None
+
     conn = get_db_connection()
 
     if not periodo_id:
@@ -1314,6 +1378,13 @@ def export_programacion_docx():
         where_clauses.append("cp.tipo_docente_mes = ?")
         params.append(tipo_docente_mes)
 
+    if solo_matriculados:
+        where_clauses.append("(COALESCE(pp.matriculados, cp.matriculados) IS NOT NULL AND COALESCE(pp.matriculados, cp.matriculados) > 0)")
+
+    if min_matriculados_int is not None:
+        where_clauses.append("(COALESCE(pp.matriculados, cp.matriculados) >= ?)")
+        params.append(min_matriculados_int)
+        
     where_sql = ""
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
@@ -1325,7 +1396,10 @@ def export_programacion_docx():
             pa.tipo AS tipo_programa,
             pa.nombre_corto AS programa,
             pa.modalidad,
-            pa.universidad_procedencia,
+
+            -- 👇 CORRECTO: universidad_procedencia del DOCENTE
+            d.universidad_procedencia,
+
             d.nombre_completo AS docente,
             d.dni,
             d.telefono,
@@ -1335,6 +1409,7 @@ def export_programacion_docx():
             d.titulo_universidad,
             d.magister_universidad,
             d.doctor_universidad,
+
             cp.tipo_docente_mes,
             cp.ciclo,
             cp.asignatura,
@@ -1343,12 +1418,17 @@ def export_programacion_docx():
             cp.remuneracion_monto,
             cp.poi,
             cp.observaciones,
-            p.etiqueta AS periodo_etiqueta
+            p.etiqueta AS periodo_etiqueta,
+
+            COALESCE(pp.matriculados, cp.matriculados) AS matriculados
         FROM curso_programado cp
         LEFT JOIN docente d ON d.id = cp.docente_id
         JOIN programa_academico pa ON pa.id = cp.programa_id
         JOIN facultad f ON f.id = pa.facultad_id
         JOIN periodo p ON p.id = cp.periodo_id
+        LEFT JOIN programa_periodo pp
+            ON pp.programa_id = pa.id
+            AND pp.periodo_id = cp.periodo_id
         {where_sql}
         ORDER BY
             f.nombre,
@@ -1358,6 +1438,7 @@ def export_programacion_docx():
             d.nombre_completo,
             cp.ciclo
     """
+
 
     rows = conn.execute(sql, params).fetchall()
 
@@ -1473,6 +1554,11 @@ def export_programacion_docx():
                     "POI",
                     "DNI",
                 ]
+
+                # 👇 NUEVO
+                if col_matriculados:
+                    headers.append("Matriculados")
+
                 extra_cols = []
                 if col_observaciones:
                     extra_cols.append("Observaciones")
@@ -1513,6 +1599,12 @@ def export_programacion_docx():
                     row_cells[8].text = rdata["dni"] or ""
 
                     col_idx = 9
+                    # 👇 NUEVO: Matriculados inmediatamente después de DNI
+                    if col_matriculados:
+                        row_cells[col_idx].text = str(rdata["matriculados"] or "")
+                        col_idx += 1
+
+                    # Luego las extra_cols como ya lo haces
                     if col_observaciones:
                         row_cells[col_idx].text = rdata["observaciones"] or ""
                         col_idx += 1
@@ -1546,18 +1638,13 @@ def export_programacion_docx():
         doc.add_paragraph("")
 
         headers = [
-            "N°",
-            "DOCENTE",
-            "PROGRAMA",
-            "CICLO",
-            "ASIGNATURA",
-            "FECHAS",
-            "REMUNERACION",
-            "POI",
-            "DNI",
+            "N°", "DOCENTE", "PROGRAMA", "CICLO", "ASIGNATURA",
+            "FECHAS", "REMUNERACION", "POI", "DNI",
         ]
 
         extra_cols = []
+        if col_matriculados:
+            headers.append("Matriculados")
         if col_observaciones:
             extra_cols.append("OBSERVACIONES")
         if col_universidad:
@@ -1592,6 +1679,9 @@ def export_programacion_docx():
             row_cells[8].text = rdata["dni"] or ""
 
             col_idx = 9
+            if col_matriculados:
+                row_cells[col_idx].text = str(rdata["matriculados"] or "")
+                col_idx += 1
             if col_observaciones:
                 row_cells[col_idx].text = rdata["observaciones"] or ""
                 col_idx += 1
@@ -1894,5 +1984,6 @@ def cartas_invitacion():
     )
 
 
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -23,7 +23,6 @@ CREATE TABLE programa_academico (
   mencion TEXT,                      -- opcional
   promocion TEXT,                    -- opcional
   modalidad TEXT,                    -- "PRESENCIAL" | "DISTANCIA" | "MIXTA" | etc.
-  universidad_procedencia TEXT,      -- Ej: "UNIVERSIDAD CESAR VALLEJO"
   activo INTEGER NOT NULL DEFAULT 1,
 
   FOREIGN KEY (facultad_id) REFERENCES facultad(id)
@@ -58,6 +57,7 @@ CREATE TABLE docente (
   correo TEXT,
   telefono TEXT,
 
+  -- grados/títulos
   titulo_profesional TEXT,
   titulo_fecha TEXT,
   titulo_universidad TEXT,
@@ -70,8 +70,11 @@ CREATE TABLE docente (
   doctor_fecha TEXT,
   doctor_universidad TEXT,
 
+  -- NUEVO: universidad de procedencia (atributo propio del docente)
+  universidad_procedencia TEXT,
+
   antecedentes TEXT,
-  tipo_docente TEXT,
+  tipo_docente TEXT,                 -- LOCAL | ORDINARIZADO | EXTERNO | etc.
 
   tiene_cv INTEGER NOT NULL DEFAULT 0,
   link_cv TEXT,
@@ -83,6 +86,27 @@ CREATE TABLE docente (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- =========================================
+-- TABLA: programa_periodo (matriculados por programa y período)
+-- =========================================
+DROP TABLE IF EXISTS programa_periodo;
+
+CREATE TABLE programa_periodo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  programa_id INTEGER NOT NULL,
+  periodo_id INTEGER NOT NULL,
+
+  -- Constantes del período académico para ese programa
+  matriculados INTEGER NOT NULL,     -- Número de matriculados del programa en ese período
+  observaciones TEXT,
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  UNIQUE (programa_id, periodo_id),
+  FOREIGN KEY (programa_id) REFERENCES programa_academico(id),
+  FOREIGN KEY (periodo_id) REFERENCES periodo(id)
+);
 
 -- ============================
 -- TABLA: curso_programado (programación mensual)
@@ -102,6 +126,9 @@ CREATE TABLE curso_programado (
   fecha_inicio TEXT,                 -- opcional "2025-11-07"
   fecha_fin TEXT,                    -- opcional "2025-11-23"
 
+  -- Horas propias del curso (se mantiene acá)
+  horas_texto TEXT,                  -- Ej: "19 horas"
+
   remuneracion_monto REAL,
   remuneracion_texto TEXT,           -- "S/. 5,900.00"
   poi TEXT,
@@ -113,7 +140,7 @@ CREATE TABLE curso_programado (
 
   observaciones TEXT,
 
-  -- ===== NUEVOS CAMPOS PARA CARTA DE INVITACIÓN =====
+  -- Datos para carta de invitación / oficios
   codigo TEXT,                       -- DU36, DK05, MS04, etc.
   categoria TEXT,                    -- FMA, FDO, INV, etc.
   sem1 TEXT,                         -- "07, 08, 09"
@@ -128,7 +155,7 @@ CREATE TABLE curso_programado (
 );
 
 -- ============================
--- TABLA: docente_propuesto (docente propuesto para X periodo)
+-- TABLA: docente_propuesto
 -- ============================
 DROP TABLE IF EXISTS docente_propuesto;
 
@@ -147,7 +174,12 @@ CREATE TABLE docente_propuesto (
   FOREIGN KEY (periodo_id) REFERENCES periodo(id)
 );
 
-CREATE TABLE IF NOT EXISTS docente_carga_academica (
+-- ============================
+-- TABLA: docente_carga_academica (por periodo académico)
+-- ============================
+DROP TABLE IF EXISTS docente_carga_academica;
+
+CREATE TABLE docente_carga_academica (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   docente_id INTEGER NOT NULL,
   periodo_academico TEXT NOT NULL,   -- Ej: '2025-III'
