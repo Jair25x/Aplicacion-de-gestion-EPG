@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Sugerencias de cursos – {{ docente.nombre_completo }}{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">
+  Sugerencias de cursos
+  <small class="text-muted d-block fs-6">
+    {{ docente.nombre_completo }}
+    {% if docente.dni %}
+      · DNI: <code>{{ docente.dni }}</code>
+    {% endif %}
+  </small>
+</h1>
+
+{# ============ Mensajes flash ============ #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }} mb-1 py-2">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{# ============ Filtros de la vista ============ #}
+<form class="row g-3 mb-3" method="get">
+  <div class="col-md-4">
+    <label class="form-label">Período</label>
+    <select name="periodo_id" class="form-select">
+      <option value="">Todos los períodos</option>
+      {% for p in periodos_docente %}
+        <option value="{{ p.id }}"
+          {% if periodo_id and periodo_id|int == p.id %}selected{% endif %}>
+          {% if p.periodo_academico %}
+            {{ p.periodo_academico }} – {{ p.etiqueta }}
+          {% else %}
+            {{ p.etiqueta }}
+          {% endif %}
+        </option>
+      {% endfor %}
+    </select>
+    <div class="form-text">
+      Solo se muestran períodos en los que el docente tiene cursos sugeridos.
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Estado de la sugerencia</label>
+    <select name="estado" class="form-select">
+      <option value="">Todos</option>
+      <option value="SUGERIDO" {% if estado == 'SUGERIDO' %}selected{% endif %}>
+        Sugerido
+      </option>
+      <option value="ASIGNADO" {% if estado == 'ASIGNADO' %}selected{% endif %}>
+        Asignado / confirmado
+      </option>
+      <option value="DESCARTADO" {% if estado == 'DESCARTADO' %}selected{% endif %}>
+        Descartado
+      </option>
+    </select>
+    <div class="form-text">
+      Los valores deben coincidir con <code>docente_sugerido_curso.estado</code>.
+    </div>
+  </div>
+
+  <div class="col-md-4 d-flex align-items-end justify-content-between">
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">
+        🔍 Aplicar filtros
+      </button>
+      <a href="{{ url_for('docente_sugerencias', docente_id=docente.id) }}"
+         class="btn btn-outline-secondary">
+        Limpiar
+      </a>
+    </div>
+
+    <div>
+      <a href="{{ url_for('docentes_list') }}" class="btn btn-link">
+        ← Volver al listado de docentes
+      </a>
+    </div>
+  </div>
+</form>
+
+{# ============ Resumen de estados ============ #}
+<div class="mb-3">
+  <div class="small text-muted mb-1">
+    Resumen por estado (según filtros aplicados):
+  </div>
+  {% if resumen_estados %}
+    <div class="d-flex flex-wrap gap-2">
+      {% for r in resumen_estados %}
+        {% set clase = "bg-secondary" %}
+        {% if r.estado == 'SUGERIDO' %}
+          {% set clase = "bg-info text-dark" %}
+        {% elif r.estado == 'ASIGNADO' %}
+          {% set clase = "bg-success" %}
+        {% elif r.estado == 'DESCARTADO' %}
+          {% set clase = "bg-danger" %}
+        {% endif %}
+        <span class="badge {{ clase }}">
+          {{ r.estado }}: {{ r.total }}
+        </span>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-muted small">
+      No hay registros para este filtro.
+    </div>
+  {% endif %}
+</div>
+
+{# ============ Tabla de cursos sugeridos ============ #}
+<div class="table-responsive shadow-sm">
+  <table class="table table-striped table-hover align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th style="width: 3rem;">#</th>
+        <th>Período</th>
+        <th>Programa</th>
+        <th>Curso</th>
+        <th>Modalidad</th>
+        <th>Fechas</th>
+        <th>Estado de la sugerencia</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if sugerencias %}
+        {% for s in sugerencias %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>
+              {% if s.periodo_academico %}
+                <strong>{{ s.periodo_academico }}</strong><br>
+              {% endif %}
+              <span class="text-muted small">
+                {{ s.etiqueta }}
+              </span>
+            </td>
+            <td>
+              {% if s.programa_nombre_corto %}
+                {{ s.programa_nombre_corto }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ s.nombre_curso }}</strong><br>
+              {% if s.codigo_curso %}
+                <span class="text-muted small">
+                  Código: {{ s.codigo_curso }}
+                </span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.modalidad %}
+                <span class="badge bg-outline-primary border border-primary text-primary">
+                  {{ s.modalidad }}
+                </span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.fecha_inicio or s.fecha_fin %}
+                <span class="small">
+                  {{ s.fecha_inicio or '¿?' }} – {{ s.fecha_fin or '¿?' }}
+                </span>
+              {% else %}
+                <span class="text-muted small">Sin fechas registradas</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.estado == 'SUGERIDO' %}
+                <span class="badge bg-info text-dark">Sugerido</span>
+              {% elif s.estado == 'ASIGNADO' %}
+                <span class="badge bg-success">Asignado / confirmado</span>
+              {% elif s.estado == 'DESCARTADO' %}
+                <span class="badge bg-danger">Descartado</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ s.estado }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            El docente no tiene cursos sugeridos con estos filtros.
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

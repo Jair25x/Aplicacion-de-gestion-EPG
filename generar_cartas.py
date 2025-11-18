@@ -1,5 +1,6 @@
 # generar_cartas.py
 # Utilidades para generación de cartas desde la BD
+
 from datetime import date, datetime
 import re
 import unicodedata
@@ -30,7 +31,7 @@ def fecha_larga_es(
 ) -> Tuple[str, str]:
     """
     Devuelve una fecha larga en español y el año, por ejemplo:
-      ("14 de noviembre de 2025", "2025")
+        ("14 de noviembre de 2025", "2025")
 
     - Si no se pasa fecha, usa la fecha actual.
     - Si se pasa datetime, usa solo la parte de fecha.
@@ -42,7 +43,7 @@ def fecha_larga_es(
     elif isinstance(fecha, date):
         hoy = fecha
     else:
-        # Por si algún día le pasan algo raro
+        # Fallback defensivo
         hoy = date.today()
 
     mes_nombre = MESES_ES[hoy.month - 1]
@@ -56,10 +57,11 @@ def fecha_larga_es(
 
 def _parse_monto(monto_str: Optional[str]) -> Optional[float]:
     """
-    Convierte:
+    Convierte strings como:
       '5900'
       '5900.0'
       'S/. 5,900.00'
+      's/ 5900'
     a float 5900.0
 
     Devuelve None si no se puede interpretar.
@@ -103,6 +105,7 @@ def calc_remuneracion(
     Retorna SIEMPRE un string con separador de miles y 2 decimales:
       '5,900.00'
       '4,140.00'
+      '0.00'
     """
     # 1) Intentar con override (valor de la BD)
     monto = _parse_monto(override)
@@ -139,9 +142,9 @@ def limpiar_nombre_archivo(nombre: str) -> str:
     Limpia un texto para usarlo como nombre de archivo:
 
     - Quita acentos
-    - Quita caracteres raros
+    - Quita caracteres no seguros
     - Reemplaza espacios por guiones bajos
-    - Evita repeticiones de guiones
+    - Evita repeticiones de guiones bajos
     """
     if not nombre:
         return "archivo"
@@ -178,8 +181,8 @@ def extraer_paterno_y_nombre(nombre_completo: str) -> Tuple[str, str]:
 
     Reglas simples:
     - Si solo hay una palabra -> (PALABRA, "")
-    - Si hay dos palabras -> (primera, segunda)
-    - Si hay 3 o más -> (primera, última)
+    - Si hay dos palabras    -> (primera, segunda)
+    - Si hay 3 o más         -> (primera, última)
     """
     if not nombre_completo:
         return "DOCENTE", ""

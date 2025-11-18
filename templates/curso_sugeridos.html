@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Docentes sugeridos – Programación EPG{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="mb-1">Docentes sugeridos para el curso</h1>
+    <p class="text-muted mb-0">
+      {{ curso.facultad_nombre }} ·
+      {% if curso.programa_tipo == 'DOCTORADO' %}
+        Doctorado
+      {% elif curso.programa_tipo == 'MAESTRIA' %}
+        Maestría
+      {% else %}
+        {{ curso.programa_tipo }}
+      {% endif %}
+      – {{ curso.programa_nombre }}
+    </p>
+  </div>
+
+  <div class="d-flex flex-column flex-md-row gap-2">
+    <a href="{{ url_for('programacion', periodo_id=curso.periodo_id) }}"
+       class="btn btn-outline-secondary btn-sm">
+      ← Volver a programación
+    </a>
+    <a href="{{ url_for('programacion_editar', curso_id=curso.id) }}"
+       class="btn btn-outline-primary btn-sm">
+      ✏️ Editar curso
+    </a>
+  </div>
+</div>
+
+{# ========= Mensajes flash ========= #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }} mb-1">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{# ========= Resumen del curso ========= #}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="card-title mb-2">{{ curso.asignatura }}</h5>
+    <p class="mb-1">
+      <strong>Período:</strong>
+      {{ curso.periodo_academico or '—' }} – {{ curso.periodo_etiqueta }}
+    </p>
+    <p class="mb-1">
+      <strong>Ciclo:</strong> {{ curso.ciclo or '—' }}
+    </p>
+    <p class="mb-1">
+      <strong>Fechas:</strong> {{ curso.fechas_texto or '—' }}
+    </p>
+    <p class="mb-0">
+      <strong>POI:</strong> {{ curso.poi or '—' }} |
+      <strong>Estado programación:</strong> {{ curso.estado_programacion or '—' }}
+    </p>
+  </div>
+</div>
+
+{# ========= Formulario para agregar nuevo sugerido ========= #}
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <h5 class="card-title mb-3">Agregar docente sugerido</h5>
+    <form method="post" class="row g-3 align-items-end">
+      <div class="col-md-8">
+        <label class="form-label">Docente</label>
+        <select name="docente_id" class="form-select" required>
+          <option value="">Seleccione un docente…</option>
+          {% for d in docentes %}
+            <option value="{{ d.id }}">
+              {{ d.nombre_completo }}
+              {% if d.tipo_docente %}
+                – {{ d.tipo_docente }}
+              {% endif %}
+              {% if d.dni %}
+                ({{ d.dni }})
+              {% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-primary w-100">
+          ⭐ Agregar como sugerido
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ========= Lista de docentes sugeridos ========= #}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title mb-3">
+      Docentes sugeridos
+      <span class="badge bg-secondary ms-1">{{ sugeridos|length }}</span>
+    </h5>
+
+    {% if sugeridos %}
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width: 3rem;">#</th>
+              <th>Nombre completo</th>
+              <th>DNI</th>
+              <th>Tipo docente (global)</th>
+              <th style="width: 6rem;" class="text-center">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in sugeridos %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ s.nombre_completo }}</td>
+              <td>
+                {% if s.dni %}
+                  <code>{{ s.dni }}</code>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if s.tipo_docente %}
+                  {% if s.tipo_docente == 'LOCAL' %}
+                    <span class="badge bg-info text-dark">Local</span>
+                  {% elif s.tipo_docente == 'ORDINARIZADO' %}
+                    <span class="badge bg-success">Ordinarizado</span>
+                  {% elif s.tipo_docente == 'EXTERNO' %}
+                    <span class="badge bg-primary">Externo</span>
+                  {% elif s.tipo_docente == 'INVITADO' %}
+                    <span class="badge bg-secondary">Invitado</span>
+                  {% else %}
+                    <span class="badge bg-light text-dark">{{ s.tipo_docente }}</span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                <form method="post"
+                      action="{{ url_for('programacion_sugerido_eliminar',
+                                         curso_id=curso.id,
+                                         sugerido_id=s.id) }}"
+                      onsubmit="return confirm('¿Quitar este docente de los sugeridos para este curso?');"
+                      class="d-inline">
+                  <button type="submit"
+                          class="btn btn-sm btn-outline-danger"
+                          title="Quitar sugerido">
+                    🗑
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">
+        Aún no hay docentes sugeridos para este curso.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

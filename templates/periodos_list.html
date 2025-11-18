@@ -29,6 +29,8 @@
         <th>Etiqueta</th>
         <th>Año</th>
         <th>Mes</th>
+        <th>Período académico</th>
+        <th>Observaciones</th>
         <th>Total cursos</th>
         <th>Acciones</th>
       </tr>
@@ -40,6 +42,24 @@
         <td>{{ p.etiqueta }}</td>
         <td>{{ p.anio }}</td>
         <td>{{ "%02d"|format(p.mes) }}</td>
+        <td>
+          {% if p.periodo_academico %}
+            <span class="badge bg-light text-muted border">
+              {{ p.periodo_academico }}
+            </span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if p.observaciones %}
+            <span class="small text-muted" title="{{ p.observaciones }}">
+              {{ p.observaciones[:60] }}{% if p.observaciones|length > 60 %}…{% endif %}
+            </span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
         <td>{{ p.total_cursos }}</td>
         <td>
           <a href="{{ url_for('periodo_editar', periodo_id=p.id) }}"
@@ -59,7 +79,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="6" class="text-center text-muted">
+        <td colspan="7" class="text-center text-muted">
           No hay períodos registrados.
         </td>
       </tr>

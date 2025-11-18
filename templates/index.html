@@ -19,6 +19,9 @@
       <div class="mb-1">
         <span class="badge bg-primary">
           🗓 Período actual: {{ etiqueta_periodo }}
+          {% if periodo.periodo_academico %}
+            ({{ periodo.periodo_academico }})
+          {% endif %}
         </span>
       </div>
     {% else %}
@@ -149,7 +152,7 @@
 </div>
 
 {# =========================
-   Accesos rápidos
+   Accesos rápidos + Reporte SUNEDU
    ========================= #}
 <div class="card shadow-sm border-0">
   <div class="card-body">
@@ -157,7 +160,7 @@
     <p class="text-muted small mb-3">
       Utiliza estos accesos para ir directamente a las secciones más usadas en la gestión diaria.
     </p>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="d-flex flex-wrap gap-2 mb-3">
       <a href="{{ url_for('programacion') }}" class="btn btn-outline-primary btn-sm">
         📅 Ver programación por período
       </a>
@@ -174,6 +177,50 @@
         ✉️ Generar cartas de invitación
       </a>
     </div>
+
+    <hr class="mt-0 mb-3">
+
+    {# Bloque: Reporte SUNEDU #}
+    <h6 class="mb-2">Reporte SUNEDU de docentes</h6>
+    <p class="text-muted small mb-2">
+      Descarga el CSV con la información de docentes según el período académico SUNEDU (ej. <code>2025-III</code>).
+    </p>
+
+    <form
+      class="row g-2 align-items-end"
+      method="get"
+      action="{{ url_for('export_docentes_sunedu') }}"
+    >
+      <div class="col-sm-4 col-md-3">
+        <label for="periodo_academico" class="form-label small mb-1">
+          Período académico
+        </label>
+        <select
+          id="periodo_academico"
+          name="periodo_academico"
+          class="form-select form-select-sm"
+        >
+          <option value="">
+            Todos los períodos (según carga académica)
+          </option>
+          {% if periodos_academicos %}
+            {% for pa in periodos_academicos %}
+              <option value="{{ pa.periodo_academico }}">
+                {{ pa.periodo_academico }}
+              </option>
+            {% endfor %}
+          {% else %}
+            <option value="" disabled>(Sin períodos académicos configurados)</option>
+          {% endif %}
+        </select>
+      </div>
+
+      <div class="col-sm-4 col-md-3">
+        <button type="submit" class="btn btn-sm btn-dark mt-3 mt-sm-0">
+          ⬇️ Descargar reporte SUNEDU (Excel)
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 

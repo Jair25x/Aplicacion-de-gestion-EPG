@@ -1,7 +1,7 @@
 # add_docentes_noviembre_2025.py
 import sqlite3
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, List
 import unicodedata
 import re
 
@@ -60,16 +60,27 @@ def _infer_modalidad(s: str) -> Optional[str]:
         return "DISTANCIA"
     # si están ambas o ninguna, no inferimos
     return None
+
 # -----------------------------
 # Utilidades de nombres/fechas
 # -----------------------------
-def parse_nombre(nombre_completo: str) -> Tuple[str, Optional[str], Optional[str]]:
+def parse_nombre(nombre_completo: str) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
     """
     Separa nombres y apellidos desde 'DR./DRA./Mg. ...'.
-    Retorna (nombre_normalizado, nombres, apellidos).
+
+    Retorna:
+        (nombre_normalizado_sin_títulos,
+         nombres,
+         apellido_paterno,
+         apellido_materno)
+
+    Convención usada:
+      - Se eliminan prefijos de título (DR., DRA., MG., LIC., etc.).
+      - Se asume el patrón: NOMBRES ... APELLIDO_PATERNO APELLIDO_MATERNO
+        cuando hay 3 o más partes.
     """
     if not nombre_completo:
-        return "", None, None
+        return "", None, None, None
 
     titulo_prefixes = {
         "DR.", "DRA.", "DR", "DRA",
@@ -79,19 +90,32 @@ def parse_nombre(nombre_completo: str) -> Tuple[str, Optional[str], Optional[str
         "Mg.", "Mgt.", "Mtra.", "Lic."
     }
     parts = nombre_completo.strip().split()
+    # quitar título inicial si coincide
     if parts and parts[0].rstrip(".").upper() in {p.rstrip(".").upper() for p in titulo_prefixes}:
         parts = parts[1:]
 
     if not parts:
-        return nombre_completo.strip(), None, None
+        return nombre_completo.strip(), None, None, None
+
+    # nombre_normalizado (sin título, pero respetando mayúsculas y acentos)
+    nombre_norm = " ".join(parts)
+
     if len(parts) == 1:
-        return " ".join(parts), parts[0], None
+        # solo un token: lo tratamos como nombres
+        return nombre_norm, parts[0], None, None
+
     if len(parts) == 2:
-        return " ".join(parts), parts[0], parts[1]
-    # >=3
+        # dos tokens: asumimos "NOMBRE APELLIDO_PATERNO"
+        nombres = parts[0]
+        ap_paterno = parts[1]
+        ap_materno = None
+        return nombre_norm, nombres, ap_paterno, ap_materno
+
+    # 3 o más tokens: NOMBRES ... APELLIDO_PATERNO APELLIDO_MATERNO
+    apellido_paterno = parts[-2]
+    apellido_materno = parts[-1]
     nombres = " ".join(parts[:-2])
-    apellidos = " ".join(parts[-2:])
-    return " ".join(parts), nombres, apellidos
+    return nombre_norm, nombres, apellido_paterno, apellido_materno
 
 def split_fechas_en_semanas(fechas_texto: str) -> Tuple[str, str]:
     """
@@ -130,33 +154,39 @@ def get_periodo_id(conn: sqlite3.Connection, anio: int, mes: int) -> int:
 def _catalogo_programas_por_facultad(conn: sqlite3.Connection, facultad_nombre: str) -> List[Tuple[int, str, str]]:
     """
     Devuelve [(id, nombre_corto, modalidad)] para una facultad.
+    Búsqueda INSENSIBLE a mayúsculas/minúsculas en el nombre de la facultad.
     """
+    fac = facultad_nombre.strip()
     cur = conn.execute(
         """
         SELECT p.id, p.nombre_corto, p.modalidad
         FROM programa_academico p
         JOIN facultad f ON f.id = p.facultad_id
-        WHERE f.nombre = ? AND p.activo = 1
+        WHERE LOWER(f.nombre) = LOWER(?) AND p.activo = 1
         """,
-        (facultad_nombre,),
+        (fac,),
     )
     return cur.fetchall()
 
 def get_programa_id(conn: sqlite3.Connection, facultad_nombre: str, programa_nombre_corto: str) -> int:
     """
     Resuelve el programa por facultad + nombre_corto (tolerante a modalidad).
-    1) Intento exacto.
+    1) Intento exacto (facultad case-insensitive).
     2) Intento por nombre_corto sin modalidad (normalizado).
     """
-    # Intento exacto primero
+    fac = facultad_nombre.strip()
+
+    # Intento exacto primero (facultad insensible a mayúsculas/minúsculas)
     cur = conn.execute(
         """
         SELECT p.id
         FROM programa_academico p
         JOIN facultad f ON f.id = p.facultad_id
-        WHERE f.nombre = ? AND p.nombre_corto = ? AND p.activo = 1
+        WHERE LOWER(f.nombre) = LOWER(?) 
+          AND p.nombre_corto = ?
+          AND p.activo = 1
         """,
-        (facultad_nombre, programa_nombre_corto),
+        (fac, programa_nombre_corto),
     )
     row = cur.fetchone()
     if row:
@@ -167,7 +197,6 @@ def get_programa_id(conn: sqlite3.Connection, facultad_nombre: str, programa_nom
     objetivo = _remove_modalidad_tokens(programa_nombre_corto)
 
     candidatos = []
-    
     for pid, nombre_corto, modalidad in cat:
         if _remove_modalidad_tokens(nombre_corto) == objetivo:
             candidatos.append((pid, nombre_corto, modalidad))
@@ -176,19 +205,15 @@ def get_programa_id(conn: sqlite3.Connection, facultad_nombre: str, programa_nom
         return candidatos[0][0]
 
     if len(candidatos) > 1:
-        # 1) intentar desempatar por modalidad mencionada en el nombre original
         pref = _infer_modalidad(programa_nombre_corto)
         if pref:
-            # modalidad en BD puede venir como 'PRESENCIAL', 'DISTANCIA' o combinaciones 'DISTANCIA/PRESENCIAL'
             by_pref = [c for c in candidatos if pref in (c[2] or "").upper()]
             if len(by_pref) == 1:
                 return by_pref[0][0]
-            # si hay varias que contienen pref, probar coincidencia exacta
             exact = [c for c in candidatos if (c[2] or "").upper() == pref]
             if len(exact) == 1:
                 return exact[0][0]
 
-        # 2) sin preferencia clara o sigue el empate → error explícito con opciones
         opciones = [f"{nc} ({mod})" for _pid, nc, mod in candidatos]
         raise RuntimeError(
             f"Ambigüedad al resolver programa '{programa_nombre_corto}' en '{facultad_nombre}'. "
@@ -196,7 +221,6 @@ def get_programa_id(conn: sqlite3.Connection, facultad_nombre: str, programa_nom
             f"Incluye una modalidad inequívoca en el dataset (p. ej., '... Presencial' o '... a Distancia')."
         )
 
-    # Nada encontró: mostrar opciones disponibles
     existentes = [f"{nc} ({mod})" for _pid, nc, mod in cat]
     raise RuntimeError(
         f"No se encontró el programa '{programa_nombre_corto}' en facultad '{facultad_nombre}'. "
@@ -210,7 +234,23 @@ def upsert_docente(
     tipo_docente: str,
     universidad_procedencia: Optional[str] = None,
 ):
-    nombre_norm, nombres, apellidos = parse_nombre(nombre_completo)
+    """
+    Inserta/actualiza un docente en la tabla 'docente' según el DNI.
+    Se alinea al schema actual:
+      - apellido_paterno
+      - apellido_materno
+      - nombres
+      - nombre_completo
+      - universidad_procedencia
+      - tipo_docente
+      - antecedentes
+
+    El resto de campos SUNEDU quedan en NULL por ahora.
+    """
+
+    # AHORA parse_nombre devuelve:
+    # (nombre_normalizado_sin_títulos, nombres, apellido_paterno, apellido_materno)
+    nombre_norm, nombres, apellido_paterno, apellido_materno = parse_nombre(nombre_completo)
 
     cur = conn.execute("SELECT id FROM docente WHERE dni = ?", (dni,))
     row = cur.fetchone()
@@ -220,33 +260,66 @@ def upsert_docente(
         antecedentes = f"Universidad de procedencia: {universidad_procedencia}"
 
     if row:
+        # UPDATE
         conn.execute(
             """
             UPDATE docente
-            SET nombre_completo = COALESCE(?, nombre_completo),
-                nombres = COALESCE(?, nombres),
-                apellidos = COALESCE(?, apellidos),
-                tipo_docente = COALESCE(?, tipo_docente),
-                antecedentes = CASE
+            SET nombre_completo       = COALESCE(?, nombre_completo),
+                nombres              = COALESCE(?, nombres),
+                apellido_paterno     = COALESCE(?, apellido_paterno),
+                apellido_materno     = COALESCE(?, apellido_materno),
+                tipo_docente         = COALESCE(?, tipo_docente),
+                universidad_procedencia = COALESCE(?, universidad_procedencia),
+                antecedentes         = CASE
                     WHEN ? IS NOT NULL AND (antecedentes IS NULL OR TRIM(antecedentes) = '')
                     THEN ?
                     ELSE antecedentes
                 END,
-                activo = 1,
-                updated_at = datetime('now')
+                activo               = 1,
+                updated_at           = datetime('now')
             WHERE dni = ?
             """,
-            (nombre_norm, nombres, apellidos, tipo_docente, antecedentes, antecedentes, dni),
+            (
+                nombre_norm,
+                nombres,
+                apellido_paterno,
+                apellido_materno,
+                tipo_docente,
+                universidad_procedencia,
+                antecedentes,
+                antecedentes,
+                dni,
+            ),
         )
         cur2 = conn.execute("SELECT id FROM docente WHERE dni = ?", (dni,))
         return cur2.fetchone()[0]
     else:
+        # INSERT
         conn.execute(
             """
-            INSERT INTO docente (nombre_completo, nombres, apellidos, dni, tipo_docente, antecedentes, activo)
-            VALUES (?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO docente (
+                apellido_paterno,
+                apellido_materno,
+                nombres,
+                nombre_completo,
+                dni,
+                tipo_docente,
+                antecedentes,
+                universidad_procedencia,
+                activo
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
-            (nombre_norm, nombres, apellidos, dni, tipo_docente, antecedentes),
+            (
+                apellido_paterno,
+                apellido_materno,
+                nombres,
+                nombre_norm,
+                dni,
+                tipo_docente,
+                antecedentes,
+                universidad_procedencia,
+            ),
         )
         return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -268,6 +341,11 @@ def insert_curso_programado(
     categoria: Optional[str] = None,
     observaciones: Optional[str] = None,
 ):
+    """
+    Inserta un registro en curso_programado usando el esquema actual.
+    Los campos no provistos (fecha_inicio, fecha_fin, modalidad_dictado, horas_texto)
+    se dejan a NULL o valor por defecto (modalidad_dictado='PRESENCIAL').
+    """
     sem1, sem2 = split_fechas_en_semanas(fechas_texto)
 
     conn.execute(
@@ -281,24 +359,32 @@ def insert_curso_programado(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            periodo_id, programa_id, docente_id,
-            ciclo, asignatura, fechas_texto,
-            remuneracion_monto, remuneracion_texto, poi,
-            dni_docente, tipo_docente_mes, estado_programacion,
-            observaciones, codigo, categoria, sem1, sem2
-        )
+            periodo_id,
+            programa_id,
+            docente_id,
+            ciclo,
+            asignatura,
+            fechas_texto,
+            remuneracion_monto,
+            remuneracion_texto,
+            poi,
+            dni_docente,
+            tipo_docente_mes,
+            estado_programacion,
+            observaciones,
+            codigo,
+            categoria,
+            sem1,
+            sem2,
+        ),
     )
 
 # -----------------------------
 # Datos NOVIEMBRE 2025
 # -----------------------------
-
-# -----------------------------
-# Datos NOVIEMBRE 2025
-# -----------------------------
 # Para mantener trazabilidad exacta con tu documento, cada item incluye:
-# facultad, universidad_procedencia (solo para docente.antecedentes), programa.nombre_corto, modalidad (solo informativa),
-# ciclo, asignatura, fechas, rem_texto, rem_monto, poi, dni, tipo_docente_mes.
+# facultad, universidad_procedencia (solo para docente.antecedentes),
+# programa.nombre_corto, ciclo, asignatura, fechas, rem_texto, rem_monto, poi, dni, tipo_docente_mes.
 NOVIEMBRE = [
     # ---- FACULTAD DE CIENCIAS Y HUMANIDADES ----
     # Doctorado en Ciencias de la Educación
@@ -672,7 +758,7 @@ NOVIEMBRE = [
 
     # Maestría en Administración de Negocios
     {
-        "facultad": "Facultad de Ciencias Económicas y Contables",
+        "facultad": "Facultad de Ciencias Económicas Y Contables",
         "docente": "MG. WERNHER OMAR GUEVARA MONTESINOS",
         "dni": "08687564",
         "universidad": "UNIVERSIDAD DEL PACÍFICO",

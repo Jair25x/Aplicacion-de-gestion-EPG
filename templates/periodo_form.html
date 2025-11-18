@@ -22,25 +22,44 @@
 {% endwith %}
 
 <form method="post" class="row g-3">
-  <div class="col-md-3">
+  <div class="col-md-2">
     <label class="form-label">Año *</label>
     <input type="number" name="anio" class="form-control"
            value="{{ periodo.anio if periodo else '' }}" required>
   </div>
 
-  <div class="col-md-3">
+  <div class="col-md-2">
     <label class="form-label">Mes (1–12) *</label>
     <input type="number" name="mes" class="form-control"
            value="{{ periodo.mes if periodo else '' }}" min="1" max="12" required>
   </div>
 
-  <div class="col-md-6">
+  <div class="col-md-4">
     <label class="form-label">Etiqueta *</label>
     <input type="text" name="etiqueta" class="form-control"
            value="{{ periodo.etiqueta if periodo else '' }}"
            placeholder="Ej. Noviembre 2025" required>
   </div>
 
+  <div class="col-md-4">
+    <label class="form-label">Período académico</label>
+    <input type="text" name="periodo_academico" class="form-control"
+           value="{{ periodo.periodo_academico if periodo else '' }}"
+           placeholder="Ej. 2025-III">
+    <div class="form-text">
+      Si lo dejas en blanco, se calculará automáticamente según el mes:
+      I (ene–abr), II (may–ago), III (set–dic).
+    </div>
+  </div>
+  <div class="col-12">
+    <label class="form-label">Observaciones</label>
+    <textarea
+      name="observaciones"
+      rows="2"
+      class="form-control"
+      placeholder="Notas internas, ej. 'Período extraordinario', 'Migrado del ERP', etc."
+    >{{ periodo.observaciones if periodo else '' }}</textarea>
+  </div>
   <div class="col-12 d-flex justify-content-between mt-3">
     <a href="{{ url_for('periodos_list') }}" class="btn btn-outline-secondary">
       ← Volver al listado

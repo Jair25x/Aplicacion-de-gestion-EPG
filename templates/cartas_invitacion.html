@@ -50,7 +50,8 @@
         </button>
       </div>
       <div class="col-md-5 text-muted small">
-        <strong>Tip:</strong> primero verifica que los cursos tengan docente, código, categoría y semanas (<code>sem1</code>, <code>sem2</code>) antes de generar las cartas.
+        <strong>Tip:</strong> primero verifica que los cursos tengan docente, código, categoría y semanas
+        (<code>sem1</code>, <code>sem2</code>). La remuneración se puede calcular automáticamente para maestrías y doctorados si no se registró el monto.
       </div>
     </form>
   </div>
@@ -83,8 +84,8 @@
             <div class="border rounded p-2 bg-light small">
               <div class="fw-semibold mb-1">Leyenda de estados:</div>
               <div class="d-flex flex-wrap gap-2">
-                <span class="badge bg-success">✅ Completo</span>
-                <span class="badge bg-warning text-dark">⚠️ Falta dato</span>
+                <span class="badge bg-success">✅ Listo para carta</span>
+                <span class="badge bg-warning text-dark">⚠️ Falta completar datos</span>
                 <span class="badge bg-secondary">SIN DOCENTE</span>
               </div>
             </div>
@@ -93,6 +94,9 @@
             <button type="submit" class="btn btn-success">
               ✉️ Generar cartas seleccionadas
             </button>
+            <div class="small text-muted mt-1">
+              Solo se generarán cartas para los cursos marcados como “Listo para carta”.
+            </div>
           </div>
         </div>
       </div>
@@ -110,7 +114,7 @@
 
         <div class="table-responsive">
           <table class="table table-sm table-striped align-middle mb-0">
-            <thead class="table-light">
+            <thead class="table-light position-sticky top-0">
               <tr>
                 <th style="width: 32px;">
                   <input type="checkbox" id="check_all" class="form-check-input" />
@@ -134,31 +138,54 @@
                 {% set falta_categoria = (not c.categoria) %}
                 {% set falta_sem1 = (not c.sem1) %}
                 {% set falta_sem2 = (not c.sem2) %}
-                {% set falta_rem = (c.remuneracion_monto is none) %}
 
-                {% if (falta_docente or falta_codigo or falta_categoria or falta_sem1 or falta_sem2 or falta_rem) %}
-                  {% set estado_clase = "bg-warning text-dark" %}
-                  {% set estado_texto = "⚠️ Falta completar datos" %}
-                {% else %}
+                {# Regla de remuneración:
+                   - Si programa es DOCTORADO o MAESTRIA y no hay monto, se puede calcular => NO falta.
+                   - Si no hay monto y tampoco es doctorado/maestría => falta_rem = True.
+                #}
+                {% set es_posgrado_tipo = c.programa_tipo in ['DOCTORADO', 'MAESTRIA'] %}
+                {% set falta_rem = (c.remuneracion_monto is none and not es_posgrado_tipo) %}
+
+                {% set tiene_todo = (not falta_docente and not falta_codigo and not falta_categoria and not falta_sem1 and not falta_sem2 and not falta_rem) %}
+
+                {% if tiene_todo %}
                   {% set estado_clase = "bg-success" %}
                   {% set estado_texto = "✅ Listo para carta" %}
+                {% else %}
+                  {% set estado_clase = "bg-warning text-dark" %}
+                  {% set estado_texto = "⚠️ Falta completar datos" %}
                 {% endif %}
 
-                <tr>
+                <tr class="{% if not tiene_todo %}opacity-75{% endif %}">
                   <td>
                     <input
                       type="checkbox"
                       name="curso_id"
                       value="{{ c.id }}"
                       class="form-check-input"
+                      {% if not tiene_todo %}disabled{% endif %}
                     />
                   </td>
                   <td>
-                    <span class="badge {{ estado_clase }} small">
+                    <span class="badge {{ estado_clase }} small d-inline-flex align-items-center">
                       {{ estado_texto }}
                     </span>
                     {% if falta_docente %}
                       <span class="badge bg-secondary ms-1 small">SIN DOCENTE</span>
+                    {% endif %}
+
+                    {# Detalle de qué falta #}
+                    {% if not tiene_todo %}
+                      <div class="small text-muted mt-1">
+                        Falta:
+                        {% set sep = joiner(", ") %}
+                        {% if falta_docente %}{{ sep() }}docente{% endif %}
+                        {% if falta_codigo %}{{ sep() }}código{% endif %}
+                        {% if falta_categoria %}{{ sep() }}categoría{% endif %}
+                        {% if falta_sem1 %}{{ sep() }}sem1{% endif %}
+                        {% if falta_sem2 %}{{ sep() }}sem2{% endif %}
+                        {% if falta_rem %}{{ sep() }}remuneración{% endif %}
+                      </div>
                     {% endif %}
                   </td>
                   <td>
@@ -222,9 +249,14 @@
     const checkAll = document.getElementById("check_all");
     if (checkAll) {
       checkAll.addEventListener("change", (e) => {
+        const checked = e.target.checked;
         document
           .querySelectorAll('input[type="checkbox"][name="curso_id"]')
-          .forEach((cb) => (cb.checked = e.target.checked));
+          .forEach((cb) => {
+            if (!cb.disabled) {
+              cb.checked = checked;
+            }
+          });
       });
     }
   </script>

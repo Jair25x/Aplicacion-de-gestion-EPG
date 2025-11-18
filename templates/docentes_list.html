@@ -52,7 +52,11 @@
       {% for p in periodos_global %}
         <option value="{{ p.id }}"
           {% if periodo_propuesto_id and periodo_propuesto_id|int == p.id %}selected{% endif %}>
-          {{ p.etiqueta }}
+          {% if p.periodo_academico %}
+            {{ p.periodo_academico }} – {{ p.etiqueta }}
+          {% else %}
+            {{ p.etiqueta }}
+          {% endif %}
         </option>
       {% endfor %}
     </select>
@@ -83,6 +87,19 @@
       >
       <label class="form-check-label" for="solo_propuestos">
         Solo propuestos
+      </label>
+    </div>
+    <div class="form-check ms-2">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        value="1"
+        id="solo_sugeridos"
+        name="solo_sugeridos"
+        {% if solo_sugeridos %}checked{% endif %}
+      >
+      <label class="form-check-label" for="solo_sugeridos">
+        Solo sugeridos en cursos
       </label>
     </div>
   </div>
@@ -145,6 +162,102 @@
   </div>
 </div>
 
+{# ======================= Bloque: Reporte SUNEDU rápido ======================= #}
+<div class="alert alert-light border small d-flex flex-wrap align-items-center justify-content-between mb-3">
+  <div class="mb-2 mb-sm-0">
+    <strong>Reporte SUNEDU de docentes</strong><br>
+    <span class="text-muted">
+      Descarga el reporte en Excel según el período académico (ej. <code>2025-III</code>).
+    </span>
+  </div>
+
+  <form
+    class="d-flex flex-wrap align-items-end gap-2"
+    method="get"
+    action="{{ url_for('export_docentes_sunedu') }}"
+  >
+    <div>
+      <label for="periodo_academico_sunedu" class="form-label small mb-1">
+        Período académico
+      </label>
+      <select
+        id="periodo_academico_sunedu"
+        name="periodo_academico"
+        class="form-select form-select-sm"
+      >
+        <option value="">
+          Todos los períodos
+        </option>
+        {% if periodos_academicos %}
+          {% for pa in periodos_academicos %}
+            <option value="{{ pa.periodo_academico }}">
+              {{ pa.periodo_academico }}
+            </option>
+          {% endfor %}
+        {% endif %}
+      </select>
+    </div>
+    <div class="pb-1">
+      <button type="submit" class="btn btn-sm btn-dark mt-3 mt-sm-0">
+        ⬇️ Exportar SUNEDU (Excel)
+      </button>
+    </div>
+  </form>
+</div>
+
+{# ======================= Selector de columnas ======================= #}
+<div class="mb-2 small">
+  <span class="text-muted me-2">Columnas visibles:</span>
+
+  <div class="d-inline-flex flex-wrap gap-2">
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_dni" data-col="dni" checked>
+      <label class="form-check-label" for="col_dni">DNI</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_tipo" data-col="tipo_docente" checked>
+      <label class="form-check-label" for="col_tipo">Tipo docente</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_especialidad" data-col="especialidad" checked>
+      <label class="form-check-label" for="col_especialidad">Especialidad</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_telefono" data-col="telefono" checked>
+      <label class="form-check-label" for="col_telefono">Teléfono</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_correo" data-col="correo" checked>
+      <label class="form-check-label" for="col_correo">Correo</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_cv" data-col="cv" checked>
+      <label class="form-check-label" for="col_cv">CV / recepción</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_cursos" data-col="cursos" checked>
+      <label class="form-check-label" for="col_cursos">Cursos período</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_sugeridos" data-col="sugeridos" checked>
+      <label class="form-check-label" for="col_sugeridos">Sugerido (período actual)</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_propuesto" data-col="propuesto" checked>
+      <label class="form-check-label" for="col_propuesto">Propuesto</label>
+    </div>
+  </div>
+</div>
+
 {# ======================= Tabla ======================= #}
 <div class="table-responsive shadow-sm">
   <table id="tabla-docentes" class="table table-striped table-hover align-middle mb-0">
@@ -152,14 +265,15 @@
       <tr>
         <th style="width: 3rem;">#</th>
         <th>Nombre completo</th>
-        <th>DNI</th>
-        <th>Tipo docente (global)</th>
-        <th>Especialidad</th>
-        <th>Teléfono</th>
-        <th>Correo</th>
-        <th>CV / recepción</th>
-        <th>Cursos período actual</th>
-        <th>Propuesto período seleccionado</th>
+        <th data-col="dni">DNI</th>
+        <th data-col="tipo_docente">Tipo docente (global)</th>
+        <th data-col="especialidad">Especialidad</th>
+        <th data-col="telefono">Teléfono</th>
+        <th data-col="correo">Correo</th>
+        <th data-col="cv">CV / recepción</th>
+        <th data-col="cursos">Cursos período actual</th>
+        <th data-col="sugeridos">Sugerido en cursos (período actual)</th>
+        <th data-col="propuesto">Propuesto período seleccionado</th>
         <th style="width: 7rem;">Acciones</th>
       </tr>
     </thead>
@@ -170,7 +284,7 @@
         <td>
           <strong>{{ d.nombre_completo }}</strong>
         </td>
-        <td>
+        <td data-col="dni">
           {% if d.dni %}
             <code>{{ d.dni }}</code>
           {% else %}
@@ -180,7 +294,7 @@
             </span>
           {% endif %}
         </td>
-        <td>
+        <td data-col="tipo_docente">
           {% if d.tipo_docente %}
             {% if d.tipo_docente == 'LOCAL' %}
               <span class="badge bg-primary">Local</span>
@@ -197,16 +311,16 @@
             <span class="text-muted">—</span>
           {% endif %}
         </td>
-        <td>{{ d.especialidad or '-' }}</td>
-        <td>{{ d.telefono or '-' }}</td>
-        <td>
+        <td data-col="especialidad">{{ d.especialidad or '-' }}</td>
+        <td data-col="telefono">{{ d.telefono or '-' }}</td>
+        <td data-col="correo">
           {% if d.correo %}
             <a href="mailto:{{ d.correo }}">{{ d.correo }}</a>
           {% else %}
             <span class="text-muted">—</span>
           {% endif %}
         </td>
-        <td>
+        <td data-col="cv">
           {% if d.tiene_cv %}
             <div>
               <span class="badge bg-success">CV recibido</span>
@@ -227,7 +341,7 @@
             <span class="text-muted">Sin CV</span>
           {% endif %}
         </td>
-        <td>
+        <td data-col="cursos">
           {% if d.cantidad_cursos %}
             <span class="badge bg-outline-primary border border-primary text-primary">
               {{ d.cantidad_cursos }}
@@ -236,7 +350,16 @@
             <span class="text-muted">0</span>
           {% endif %}
         </td>
-        <td>
+        <td data-col="sugeridos">
+          {% if d.cantidad_sugeridos and d.cantidad_sugeridos > 0 %}
+            <span class="badge bg-info text-dark">
+              {{ d.cantidad_sugeridos }} curso(s)
+            </span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td data-col="propuesto">
           {% if periodo_propuesto_id %}
             <form
               method="post"
@@ -249,6 +372,7 @@
               <input type="hidden" name="periodo_propuesto_id" value="{{ periodo_propuesto_id }}">
               <input type="hidden" name="solo_con_cv" value="{{ '1' if solo_con_cv else '' }}">
               <input type="hidden" name="solo_propuestos" value="{{ '1' if solo_propuestos else '' }}">
+              <input type="hidden" name="solo_sugeridos" value="{{ '1' if solo_sugeridos else '' }}">
 
               {% if d.es_propuesto %}
                 <button type="submit" class="btn btn-sm btn-warning">
@@ -271,18 +395,27 @@
           {% endif %}
         </td>
         <td>
-          <a
-            href="{{ url_for('docente_editar', docente_id=d.id) }}"
-            class="btn btn-sm btn-outline-primary"
-            title="Editar datos del docente"
-          >
-            ✏️ Editar
-          </a>
+          <div class="btn-group btn-group-sm" role="group">
+            <a
+              href="{{ url_for('docente_sugerencias', docente_id=d.id) }}"
+              class="btn btn-outline-info"
+              title="Ver cursos en los que está sugerido este docente"
+            >
+              📋 Sugeridos
+            </a>
+            <a
+              href="{{ url_for('docente_editar', docente_id=d.id) }}"
+              class="btn btn-outline-primary"
+              title="Editar datos del docente"
+            >
+              ✏️ Editar
+            </a>
+          </div>
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="11" class="text-center text-muted py-4">
+        <td colspan="12" class="text-center text-muted py-4">
           No se encontraron docentes con estos filtros.
         </td>
       </tr>
@@ -291,7 +424,7 @@
   </table>
 </div>
 
-{# ======================= JS – filtro en vivo ======================= #}
+{# ======================= JS – filtro en vivo + columnas ======================= #}
 <script>
   (function () {
     var input = document.getElementById('docentes-search-live');
@@ -322,6 +455,19 @@
         } else {
           row.style.display = 'none';
         }
+      });
+    });
+
+    // Toggle de columnas
+    var toggles = document.querySelectorAll('.docente-col-toggle');
+    toggles.forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var col = cb.getAttribute('data-col');
+        var visible = cb.checked;
+
+        document.querySelectorAll('[data-col="' + col + '"]').forEach(function (el) {
+          el.style.display = visible ? '' : 'none';
+        });
       });
     });
   })();

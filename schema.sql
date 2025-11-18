@@ -7,6 +7,7 @@ CREATE TABLE facultad (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,      -- Ej: "Facultad de Ciencias y Humanidades"
   codigo TEXT,               -- Opcional
+  observaciones TEXT,        -- Comentarios internos, notas generales
   activo INTEGER NOT NULL DEFAULT 1
 );
 
@@ -18,11 +19,18 @@ DROP TABLE IF EXISTS programa_academico;
 CREATE TABLE programa_academico (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   facultad_id INTEGER NOT NULL,
-  tipo TEXT NOT NULL,                -- "DOCTORADO" | "MAESTRIA"
+
+  -- Tipo de programa (para SUNEDU: Maestría / Doctorado / Pregrado)
+  tipo TEXT NOT NULL,                -- "DOCTORADO" | "MAESTRIA" | "PREGRADO"
+
   nombre_corto TEXT NOT NULL,        -- Ej: "Doctorado en Ciencias de la Educación 15va Promoción"
   mencion TEXT,                      -- opcional
   promocion TEXT,                    -- opcional
+
+  -- Modalidad oficial del programa
   modalidad TEXT,                    -- "PRESENCIAL" | "DISTANCIA" | "MIXTA" | etc.
+
+  observaciones TEXT,                -- Notas sobre el programa (promoción, cambios, etc.)
   activo INTEGER NOT NULL DEFAULT 1,
 
   FOREIGN KEY (facultad_id) REFERENCES facultad(id)
@@ -38,26 +46,60 @@ CREATE TABLE periodo (
   anio INTEGER NOT NULL,
   mes INTEGER NOT NULL,              -- 1-12
   etiqueta TEXT NOT NULL,            -- "Noviembre 2025"
+
+  -- periodo académico (para agrupar meses)
+  -- Ej: '2025-III' para set/oct/nov/dic 2025
+  periodo_academico TEXT,
+
+  observaciones TEXT,                -- Notas sobre el período (ej. "mes de regularización", etc.)
+
   UNIQUE (anio, mes)
 );
 
 -- ============================
--- TABLA: docente (maestro de docentes)
+-- TABLA: docente
 -- ============================
 DROP TABLE IF EXISTS docente;
 
 CREATE TABLE docente (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nombre_completo TEXT NOT NULL,
+
+  -- Nombres normalizados (para el reporte SUNEDU)
+  apellido_paterno TEXT,
+  apellido_materno TEXT,
   nombres TEXT,
-  apellidos TEXT,
+
+  -- Nombre completo para mostrar rápido en la app
+  nombre_completo TEXT NOT NULL,
+
+  -- Datos básicos
   especialidad TEXT,
-  dni TEXT UNIQUE,
+  dni TEXT UNIQUE,                   -- N° DE DNI / CARNET DE EXTRANJERÍA
+  pais_nacionalidad TEXT,           -- PAÍS (NACIONALIDAD)
   direccion TEXT,
   correo TEXT,
   telefono TEXT,
 
-  -- grados/títulos
+  -- Situación en la universidad
+  fecha_ingreso_universidad TEXT,   -- YYYY-MM-DD
+
+  -- ¿ERA DOCENTE UNIVERSITARIO A LA ENTRADA EN VIGENCIA DE LA LEY 30220?
+  era_docente_antes_ley_30220 INTEGER NOT NULL DEFAULT 0,
+
+  -- Categoría y régimen (SUNEDU)
+  categoria_docente TEXT,
+  regimen_dedicacion TEXT,
+
+  -- Condición como docente investigador
+  es_docente_investigador INTEGER NOT NULL DEFAULT 0,
+  registrado_en_dina INTEGER NOT NULL DEFAULT 0,
+
+  -- Niveles en los que el docente PUEDE dictar
+  puede_pregrado INTEGER NOT NULL DEFAULT 0,
+  puede_maestria INTEGER NOT NULL DEFAULT 0,
+  puede_doctorado INTEGER NOT NULL DEFAULT 0,
+
+  -- Grados / títulos principales (para ficha rápida)
   titulo_profesional TEXT,
   titulo_fecha TEXT,
   titulo_universidad TEXT,
@@ -70,11 +112,16 @@ CREATE TABLE docente (
   doctor_fecha TEXT,
   doctor_universidad TEXT,
 
-  -- NUEVO: universidad de procedencia (atributo propio del docente)
+  -- Universidad de procedencia principal
   universidad_procedencia TEXT,
 
-  antecedentes TEXT,
-  tipo_docente TEXT,                 -- LOCAL | ORDINARIZADO | EXTERNO | etc.
+  -- Para SUNEDU: mayor grado y mención
+  mayor_grado_academico TEXT,
+  mayor_grado_mencion TEXT,
+
+  antecedentes TEXT,                -- Info más formal (antecedentes)
+  observaciones TEXT,               -- Comentarios internos y operativos
+  tipo_docente TEXT,                -- "LOCAL", "ORDINARIZADO", etc.
 
   tiene_cv INTEGER NOT NULL DEFAULT 0,
   link_cv TEXT,
@@ -86,8 +133,27 @@ CREATE TABLE docente (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ============================
+-- TABLA: docente_grado_academico
+-- ============================
+DROP TABLE IF EXISTS docente_grado_academico;
+
+CREATE TABLE docente_grado_academico (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  docente_id INTEGER NOT NULL,
+  tipo TEXT NOT NULL,               -- "TITULO_PROFESIONAL" | "MAGISTER" | "DOCTORADO" | ...
+
+  denominacion TEXT NOT NULL,       -- Ej: "Maestría en Ciencias..."
+  universidad TEXT NOT NULL,
+  fecha_expedicion TEXT,
+  es_mayor_grado INTEGER NOT NULL DEFAULT 0,
+  observaciones TEXT,               -- Comentarios sobre el grado
+
+  FOREIGN KEY (docente_id) REFERENCES docente(id)
+);
+
 -- =========================================
--- TABLA: programa_periodo (matriculados por programa y período)
+-- TABLA: programa_periodo
 -- =========================================
 DROP TABLE IF EXISTS programa_periodo;
 
@@ -96,8 +162,7 @@ CREATE TABLE programa_periodo (
   programa_id INTEGER NOT NULL,
   periodo_id INTEGER NOT NULL,
 
-  -- Constantes del período académico para ese programa
-  matriculados INTEGER NOT NULL,     -- Número de matriculados del programa en ese período
+  matriculados INTEGER NOT NULL,
   observaciones TEXT,
 
   created_at TEXT DEFAULT (datetime('now')),
@@ -109,7 +174,7 @@ CREATE TABLE programa_periodo (
 );
 
 -- ============================
--- TABLA: curso_programado (programación mensual)
+-- TABLA: curso_programado
 -- ============================
 DROP TABLE IF EXISTS curso_programado;
 
@@ -117,34 +182,33 @@ CREATE TABLE curso_programado (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   periodo_id INTEGER NOT NULL,
   programa_id INTEGER NOT NULL,
-  docente_id INTEGER,                -- curso sin docente asignado permitido
+  docente_id INTEGER,
 
   ciclo TEXT,
   asignatura TEXT NOT NULL,
 
-  fechas_texto TEXT NOT NULL,        -- "07, 08, 09, 21, 22 Y 23 de noviembre 2025"
-  fecha_inicio TEXT,                 -- opcional "2025-11-07"
-  fecha_fin TEXT,                    -- opcional "2025-11-23"
+  fechas_texto TEXT NOT NULL,
+  fecha_inicio TEXT,
+  fecha_fin TEXT,
 
-  -- Horas propias del curso (se mantiene acá)
-  horas_texto TEXT,                  -- Ej: "19 horas"
+  modalidad_dictado TEXT NOT NULL DEFAULT 'PRESENCIAL',
+
+  horas_texto TEXT,
 
   remuneracion_monto REAL,
-  remuneracion_texto TEXT,           -- "S/. 5,900.00"
+  remuneracion_texto TEXT,
   poi TEXT,
-  dni_docente TEXT,                  -- copia del dni del docente para reportería rápida
+  dni_docente TEXT,
 
-  tipo_docente_mes TEXT,             -- LOCAL | ORDINARIZADO | etc.
+  tipo_docente_mes TEXT,
   estado_programacion TEXT DEFAULT 'PROPUESTO',
-  -- PROPUESTO | CONFIRMADO | ENVIADO_RRHH | OBSERVADO | ANULADO
 
-  observaciones TEXT,
+  observaciones TEXT,               -- Ya la tenías, la mantenemos
 
-  -- Datos para carta de invitación / oficios
-  codigo TEXT,                       -- DU36, DK05, MS04, etc.
-  categoria TEXT,                    -- FMA, FDO, INV, etc.
-  sem1 TEXT,                         -- "07, 08, 09"
-  sem2 TEXT,                         -- "21, 22, 23"
+  codigo TEXT,
+  categoria TEXT,
+  sem1 TEXT,
+  sem2 TEXT,
 
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
@@ -163,8 +227,8 @@ CREATE TABLE docente_propuesto (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   docente_id INTEGER NOT NULL,
   periodo_id INTEGER NOT NULL,
-  estado TEXT NOT NULL DEFAULT 'PROPUESTO',   -- PROPUESTO | APROBADO | DESCARTADO
-  notas TEXT,
+  estado TEXT NOT NULL DEFAULT 'PROPUESTO',
+  observaciones TEXT,               -- antes 'notas', ahora homogeneizado
 
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
@@ -175,25 +239,58 @@ CREATE TABLE docente_propuesto (
 );
 
 -- ============================
--- TABLA: docente_carga_academica (por periodo académico)
+-- TABLA: docente_carga_academica
 -- ============================
 DROP TABLE IF EXISTS docente_carga_academica;
 
 CREATE TABLE docente_carga_academica (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   docente_id INTEGER NOT NULL,
+
+  -- PERIODO ACADÉMICO (SUNEDU) – texto, pero ahora consistente con periodo.periodo_academico
   periodo_academico TEXT NOT NULL,   -- Ej: '2025-III'
+
+  nivel_pregrado INTEGER NOT NULL DEFAULT 0,
+  nivel_maestria INTEGER NOT NULL DEFAULT 0,
+  nivel_doctorado INTEGER NOT NULL DEFAULT 0,
 
   horas_clase INTEGER NOT NULL DEFAULT 0,
   horas_otras_actividades INTEGER NOT NULL DEFAULT 0,
   horas_total INTEGER NOT NULL DEFAULT 0,
 
   observaciones TEXT,
-  filial TEXT,                       -- Si quieres sobreescribir la filial del docente
+  filial TEXT,
 
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
 
   UNIQUE (docente_id, periodo_academico),
   FOREIGN KEY (docente_id) REFERENCES docente(id)
+);
+
+-- ============================
+-- TABLA: docente_sugerido_curso
+-- ============================
+DROP TABLE IF EXISTS docente_sugerido_curso;
+
+CREATE TABLE docente_sugerido_curso (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  docente_id INTEGER NOT NULL,
+  curso_id INTEGER NOT NULL,   -- referencia a curso_programado.id
+
+  -- Estado de la sugerencia:
+  --  SUGERIDO: sugerencia activa
+  --  DESCARTADO: se evaluó pero se descartó
+  --  ASIGNADO: terminó siendo el docente del curso
+  estado TEXT NOT NULL DEFAULT 'SUGERIDO',
+
+  motivo TEXT,                 -- Ej: "Especialista en metodología", "Experiencia previa en el programa", etc.
+  origen TEXT,                 -- Ej: "COORDINACIÓN", "DIRECCIÓN", "SISTEMA"
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  UNIQUE (docente_id, curso_id),
+  FOREIGN KEY (docente_id) REFERENCES docente(id),
+  FOREIGN KEY (curso_id) REFERENCES curso_programado(id)
 );

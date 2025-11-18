@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% if programa %}
+  {% set page_title = "Editar programa académico" %}
+{% else %}
+  {% set page_title = "Nuevo programa académico" %}
+{% endif %}
+
+{% block title %}{{ page_title }} – Gestión EPG{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">{{ page_title }}</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="mb-3">
+      {% for category, msg in messages %}
+        <div class="alert alert-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<form method="post" class="row g-3">
+  <div class="col-md-4">
+    <label class="form-label">Facultad *</label>
+    <select name="facultad_id" class="form-select" required>
+      <option value="">Seleccione…</option>
+      {% for f in facultades %}
+        <option value="{{ f.id }}"
+          {% if programa and programa.facultad_id == f.id %}selected{% endif %}>
+          {{ f.nombre }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Tipo de programa *</label>
+    {% set tipo = programa.tipo if programa else '' %}
+    <select name="tipo" class="form-select" required>
+      <option value="">Seleccione…</option>
+      <option value="DOCTORADO" {% if tipo == 'DOCTORADO' %}selected{% endif %}>Doctorado</option>
+      <option value="MAESTRIA" {% if tipo == 'MAESTRIA' %}selected{% endif %}>Maestría</option>
+      <option value="PREGRADO" {% if tipo == 'PREGRADO' %}selected{% endif %}>Pregrado</option>
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Modalidad oficial</label>
+    {% set modalidad = programa.modalidad if programa else '' %}
+    <select name="modalidad" class="form-select">
+      <option value="">Sin definir</option>
+      <option value="PRESENCIAL" {% if modalidad == 'PRESENCIAL' %}selected{% endif %}>Presencial</option>
+      <option value="DISTANCIA" {% if modalidad == 'DISTANCIA' %}selected{% endif %}>A distancia</option>
+      <option value="MIXTA" {% if modalidad == 'MIXTA' %}selected{% endif %}>Mixta</option>
+    </select>
+  </div>
+
+  <div class="col-md-12">
+    <label class="form-label">Nombre corto *</label>
+    <input
+      type="text"
+      name="nombre_corto"
+      value="{{ programa.nombre_corto if programa else '' }}"
+      class="form-control"
+      required
+      placeholder="Ej. Maestría en Docencia Universitaria 18va Promoción"
+    >
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Mención</label>
+    <input
+      type="text"
+      name="mencion"
+      value="{{ programa.mencion if programa else '' }}"
+      class="form-control"
+      placeholder="Ej. Gestión de la Educación Superior"
+    >
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Promoción</label>
+    <input
+      type="text"
+      name="promocion"
+      value="{{ programa.promocion if programa else '' }}"
+      class="form-control"
+      placeholder="Ej. 15va Promoción, 2025-III"
+    >
+  </div>
+  <div class="col-12">
+      <label class="form-label">Observaciones</label>
+      <textarea
+        name="observaciones"
+        rows="2"
+        class="form-control"
+        placeholder="Notas internas, observaciones SUNEDU, etc."
+      >{{ programa.observaciones if programa else '' }}</textarea>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Estado</label>
+    <div class="form-check mt-2">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        id="activo"
+        name="activo"
+        value="1"
+        {% if not programa or programa.activo %}checked{% endif %}
+      >
+      <label class="form-check-label" for="activo">
+        Programa activo
+      </label>
+    </div>
+  </div>
+
+  <div class="col-12 mt-3 d-flex justify-content-between">
+    <a href="{{ url_for('programas_list') }}" class="btn btn-outline-secondary">
+      ← Volver al listado
+    </a>
+    <button type="submit" class="btn btn-primary">
+      💾 Guardar
+    </button>
+  </div>
+</form>
+
+{% endblock %}

@@ -32,7 +32,7 @@ def parse_monto(monto_str: Optional[str]) -> Optional[float]:
     s = monto_str.strip()
     if s in ("-", "--", ""):
         return None
-    for pref in ["S/.", "S/", "s/.", "s/"]:
+    for pref in ("S/.", "S/", "s/.", "s/"):
         s = s.replace(pref, "")
     s = s.replace(" ", "")
     s = s.replace(",", "")
@@ -48,13 +48,12 @@ def split_sem1_sem2(fechas_texto: Optional[str]) -> Tuple[Optional[str], Optiona
       sem1='05, 06 y 07 de diciembre 2025'
       sem2='19, 20 y 21 de diciembre 2025'
     - Si hay >=4 días, parte por mitades (mitad inferior y superior).
-    - Conserva el sufijo a partir de la primera ocurrencia de 'de ' (p. ej., 'de diciembre 2025').
+    - Conserva el sufijo a partir de la primera ocurrencia de ' de ' (p. ej., 'de diciembre 2025').
     - Si no puede partir, retorna (None, None).
     """
     if not fechas_texto:
         return None, None
 
-    # Extraer todos los días (1-2 dígitos)
     dias = re.findall(r"\d{1,2}", fechas_texto)
     if len(dias) < 4:
         return None, None
@@ -68,15 +67,15 @@ def split_sem1_sem2(fechas_texto: Optional[str]) -> Tuple[Optional[str], Optiona
     if pos != -1:
         sufijo = fechas_texto[pos:].strip()
 
-    def formatear(dias_bloque: List[str]) -> Optional[str]:
-        if not dias_bloque:
+    def formatear(bloque: List[str]) -> Optional[str]:
+        if not bloque:
             return None
-        if len(dias_bloque) == 1:
-            cuerpo = dias_bloque[0]
-        elif len(dias_bloque) == 2:
-            cuerpo = f"{dias_bloque[0]} y {dias_bloque[1]}"
+        if len(bloque) == 1:
+            cuerpo = bloque[0]
+        elif len(bloque) == 2:
+            cuerpo = f"{bloque[0]} y {bloque[1]}"
         else:
-            cuerpo = ", ".join(dias_bloque[:-1]) + f" y {dias_bloque[-1]}"
+            cuerpo = ", ".join(bloque[:-1]) + f" y {bloque[-1]}"
         return f"{cuerpo} {sufijo}".strip() if sufijo else cuerpo
 
     return formatear(dias_sem1), formatear(dias_sem2)
@@ -85,7 +84,8 @@ def split_sem1_sem2(fechas_texto: Optional[str]) -> Tuple[Optional[str], Optiona
 # ============================
 # Resolución de Programas
 # ============================
-# Mapea el "label" que usas en el cuadro/contrato → nombre_corto EXACTO en la BD (sembrado por init_db.py)
+# Mapea el "label" que usas en el cuadro/contrato → nombre_corto EXACTO
+# en la BD (sembrado por init_db.py)
 PROGRAMA_NAME_CANON = {
     # FCH – Doctorado en Ciencias de la Educación
     "Doctorado en Ciencias de la Educación 15va Promoción Presencial":
@@ -177,7 +177,7 @@ PROGRAMA_NAME_CANON = {
     "Maestría en Contabilidad mención en Auditoría y Control Interno 5ta Promoción a Distancia":
         "Maestría en Contabilidad mención en Auditoría y Control Interno 5ta Promoción a Distancia",
 
-    # FDCP – Derecho
+    # FDCP – Doctorados en Derecho
     "Doctorado en Derecho 2da Promoción a Distancia":
         "Doctorado en Derecho 2da Promoción a Distancia",
     "Doctorado en Derecho 3ra Promoción a Distancia":
@@ -210,28 +210,30 @@ PROGRAMA_NAME_CANON = {
         "Maestría en Derecho Civil y Comercial 4ta Promoción a Distancia",
 }
 
-# Programas “posiblemente nuevos” (fallback). Hoy no debería usarse porque init_db ya los incluye.
+# Programas “posiblemente nuevos” (fallback).
+# Hoy no debería usarse porque init_db.py ya los incluye, pero lo dejamos coherente
+# con el schema actual (usa 'observaciones', no 'universidad_procedencia').
 NEW_PROGRAM_INFO = {
     "Doctorado en Ciencias de la Educación 3ra Promoción a Distancia": {
         "facultad": "Facultad de Ciencias y Humanidades",
         "tipo": "DOCTORADO",
         "promocion": "3ra Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": None,
+        "observaciones": "Creado automáticamente desde add_cursos_diciembre_2025",
     },
     "Doctorado en Psicología 3ra Promoción a Distancia": {
         "facultad": "Facultad de Ciencias de la Salud",
         "tipo": "DOCTORADO",
         "promocion": "3ra Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": None,
+        "observaciones": "Creado automáticamente desde add_cursos_diciembre_2025",
     },
     "Maestría en Ingeniería Civil mención en Hidráulica y Ambiental 2da Promoción a Distancia": {
         "facultad": "Facultad de Ingenierías y Arquitectura",
         "tipo": "MAESTRIA",
         "promocion": "2da Promoción",
         "modalidad": "DISTANCIA",
-        "universidad": None,
+        "observaciones": "Creado automáticamente desde add_cursos_diciembre_2025",
     },
 }
 
@@ -241,7 +243,8 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
     Dado el texto de PROGRAMA que usas en tu lista,
     devuelve el id de programa_academico.
     - Resuelve con PROGRAMA_NAME_CANON.
-    - Si no existe en la BD y está en NEW_PROGRAM_INFO => lo crea.
+    - Si no existe en la BD y está en NEW_PROGRAM_INFO => lo crea
+      usando el schema actual (modalidad, observaciones).
     """
     db_name = PROGRAMA_NAME_CANON.get(programa_label, programa_label)
 
@@ -258,7 +261,6 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
             f"Revisa el mapeo PROGRAMA_NAME_CANON."
         )
 
-    # Crear programa nuevo si procede (fallback)
     cursor.execute("SELECT id FROM facultad WHERE nombre = ?", (info["facultad"],))
     fac = cursor.fetchone()
     if not fac:
@@ -269,7 +271,7 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
         """
         INSERT INTO programa_academico
             (facultad_id, tipo, nombre_corto, mencion, promocion,
-             modalidad, universidad_procedencia, activo)
+             modalidad, observaciones, activo)
         VALUES (?, ?, ?, NULL, ?, ?, ?, 1);
         """,
         (
@@ -278,7 +280,7 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
             db_name,
             info.get("promocion"),
             info.get("modalidad"),
-            info.get("universidad"),
+            info.get("observaciones"),
         ),
     )
     conn.commit()
@@ -290,6 +292,8 @@ def get_programa_id(conn: sqlite3.Connection, cursor: sqlite3.Cursor, programa_l
 # ============================
 # Datos – Cursos DICIEMBRE 2025 (sin docente asignado)
 # ============================
+# NOTA: si algún curso en particular quieres marcar como PRESENCIAL, puedes
+# añadir la clave "modalidad_dictado": "PRESENCIAL" en su dict.
 cursos_diciembre = [
     # ========= FCH – Doctorado en Ciencias de la Educación =========
     {
@@ -861,6 +865,11 @@ def main():
         programa_label = curso["programa"]
         programa_id = get_programa_id(conn, cursor, programa_label)
 
+        # Intentamos obtener la modalidad base del programa académico
+        cursor.execute("SELECT modalidad FROM programa_academico WHERE id = ?", (programa_id,))
+        row_mod = cursor.fetchone()
+        modalidad_base = row_mod[0] if row_mod else None
+
         ciclo = curso["ciclo"]
         asignatura = curso["asignatura"]
         fechas_texto = curso["fechas"]
@@ -870,6 +879,15 @@ def main():
         observaciones = curso["observaciones"]
 
         sem1_texto, sem2_texto = split_sem1_sem2(fechas_texto)
+
+        # Determinar modalidad_dictado (campo de curso_programado)
+        modalidad_dictado = curso.get("modalidad_dictado") or modalidad_base
+        if not modalidad_dictado:
+            # Heurística simple si no hay nada en BD:
+            if "distancia" in programa_label.lower():
+                modalidad_dictado = "DISTANCIA"
+            else:
+                modalidad_dictado = "PRESENCIAL"
 
         # Idempotencia: mismo periodo, programa, ciclo, asignatura y fechas_texto
         cursor.execute(
@@ -897,11 +915,13 @@ def main():
             INSERT INTO curso_programado
                 (periodo_id, programa_id, docente_id,
                  ciclo, asignatura, fechas_texto,
+                 modalidad_dictado,
                  remuneracion_monto, remuneracion_texto,
                  poi, dni_docente, tipo_docente_mes,
                  observaciones, sem1, sem2)
             VALUES (?, ?, NULL,
                     ?, ?, ?,
+                    ?,
                     ?, ?,
                     ?, NULL, NULL,
                     ?, ?, ?);
@@ -912,6 +932,7 @@ def main():
                 ciclo,
                 asignatura,
                 fechas_texto,
+                modalidad_dictado,
                 remuneracion_monto,
                 remuneracion_texto,
                 poi,

@@ -46,6 +46,12 @@
             <a class="nav-link {% if '/cartas_invitacion' in request.path %}active{% endif %}"
               href="{{ url_for('cartas_invitacion') }}">Cartas invitación</a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link {% if '/programas' in request.path %}active{% endif %}"
+              href="{{ url_for('programas_list') }}">
+              Programas
+            </a>
+          </li>
         </ul>
       </div>
     </div>

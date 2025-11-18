@@ -22,35 +22,66 @@
 {% endwith %}
 
 <form method="post" class="row g-3">
-  <div class="col-md-6">
-    <label class="form-label">Nombre completo *</label>
-    <input type="text" name="nombre_completo"
-           value="{{ docente.nombre_completo if docente else '' }}"
-           class="form-control" required>
+
+  {# ====== DATOS PERSONALES ====== #}
+  <div class="col-12">
+    <h5>Datos personales</h5>
+    <hr class="mt-1">
   </div>
 
   <div class="col-md-3">
-    <label class="form-label">
-      DNI <span class="text-muted small">(opcional)</span>
-    </label>
-    <input type="text" name="dni"
-           value="{{ docente.dni if docente else '' }}"
+    <label class="form-label">Apellido paterno</label>
+    <input type="text" name="apellido_paterno"
+           value="{{ docente.apellido_paterno if docente else '' }}"
            class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Apellido materno</label>
+    <input type="text" name="apellido_materno"
+           value="{{ docente.apellido_materno if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Nombres</label>
+    <input type="text" name="nombres"
+           value="{{ docente.nombres if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Nombre completo *</label>
+    <input type="text" name="nombre_completo"
+           value="{{ docente.nombre_completo if docente else '' }}"
+           class="form-control" required
+           placeholder="Ej. LUKSIC COSSIO PAULA CARMEN">
     <div class="form-text">
-      Puedes registrar al docente sin DNI y completarlo más adelante.
+      Se usa para mostrar en reportes y programación.
     </div>
   </div>
 
   <div class="col-md-3">
-    <label class="form-label">Tipo docente (global)</label>
-    <select name="tipo_docente" class="form-select">
-      <option value="">Sin definir</option>
-      {% set tipo = docente.tipo_docente if docente else '' %}
-      <option value="LOCAL" {% if tipo == 'LOCAL' %}selected{% endif %}>Local</option>
-      <option value="ORDINARIZADO" {% if tipo == 'ORDINARIZADO' %}selected{% endif %}>Ordinarizado</option>
-      <option value="EXTERNO" {% if tipo == 'EXTERNO' %}selected{% endif %}>Externo</option>
-      <option value="INVITADO" {% if tipo == 'INVITADO' %}selected{% endif %}>Invitado</option>
-    </select>
+    <label class="form-label">
+      DNI / Carnet extranjería <span class="text-muted small">(opcional)</span>
+    </label>
+    <input type="text" name="dni"
+           value="{{ docente.dni if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">País (nacionalidad)</label>
+    <input type="text" name="pais_nacionalidad"
+           value="{{ docente.pais_nacionalidad if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Dirección</label>
+    <input type="text" name="direccion"
+           value="{{ docente.direccion if docente else '' }}"
+           class="form-control">
   </div>
 
   <div class="col-md-4">
@@ -74,9 +105,224 @@
            class="form-control">
   </div>
 
+  {# ====== DATOS INSTITUCIONALES / LABORALES ====== #}
+  <div class="col-12 mt-3">
+    <h5>Datos institucionales (UAC / SUNEDU)</h5>
+    <hr class="mt-1">
+  </div>
+
   <div class="col-md-3">
-    <label class="form-label">Tiene CV</label>
+    <label class="form-label">Fecha de ingreso a la universidad</label>
+    <input type="text" name="fecha_ingreso_universidad"
+           value="{{ docente.fecha_ingreso_universidad if docente else '' }}"
+           class="form-control" placeholder="YYYY-MM-DD">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Categoría docente</label>
+    <input type="text" name="categoria_docente"
+           value="{{ docente.categoria_docente if docente else '' }}"
+           class="form-control" placeholder="PRINCIPAL, ASOCIADO, AUXILIAR, CONTRATADO, etc.">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Régimen dedicación</label>
+    <input type="text" name="regimen_dedicacion"
+           value="{{ docente.regimen_dedicacion if docente else '' }}"
+           class="form-control" placeholder="T.C., T.P., D.E., etc.">
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Tipo docente (global)</label>
+    <select name="tipo_docente" class="form-select">
+      <option value="">Sin definir</option>
+      {% set tipo = docente.tipo_docente if docente else '' %}
+      <option value="LOCAL" {% if tipo == 'LOCAL' %}selected{% endif %}>Local</option>
+      <option value="ORDINARIZADO" {% if tipo == 'ORDINARIZADO' %}selected{% endif %}>Ordinarizado</option>
+      <option value="EXTERNO" {% if tipo == 'EXTERNO' %}selected{% endif %}>Externo</option>
+      <option value="INVITADO" {% if tipo == 'INVITADO' %}selected{% endif %}>Invitado</option>
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Docente investigador</label>
+    <div class="form-check mt-2">
+      <input class="form-check-input" type="checkbox" value="1" id="es_docente_investigador"
+             name="es_docente_investigador"
+             {% if docente and docente.es_docente_investigador %}checked{% endif %}>
+      <label class="form-check-label" for="es_docente_investigador">
+        Sí, figura como docente investigador
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Registrado en DINA / RENAC</label>
+    <div class="form-check mt-2">
+      <input class="form-check-input" type="checkbox" value="1" id="registrado_en_dina"
+             name="registrado_en_dina"
+             {% if docente and docente.registrado_en_dina %}checked{% endif %}>
+      <label class="form-check-label" for="registrado_en_dina">
+        Sí, registrado
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">¿Era docente antes de la Ley 30220?</label>
+    <div class="form-check mt-2">
+      <input class="form-check-input" type="checkbox" value="1" id="era_docente_antes_ley_30220"
+             name="era_docente_antes_ley_30220"
+             {% if docente and docente.era_docente_antes_ley_30220 %}checked{% endif %}>
+      <label class="form-check-label" for="era_docente_antes_ley_30220">
+        Sí, era docente universitario al entrar en vigencia la Ley 30220
+      </label>
+    </div>
+  </div>
+
+  {# ====== NIVELES EN LOS QUE PUEDE DICTAR ====== #}
+  <div class="col-12 mt-3">
+    <h5>Niveles en los que puede dictar</h5>
+    <hr class="mt-1">
+  </div>
+
+  <div class="col-md-4">
     <div class="form-check">
+      <input class="form-check-input" type="checkbox" value="1" id="puede_pregrado"
+             name="puede_pregrado"
+             {% if docente and docente.puede_pregrado %}checked{% endif %}>
+      <label class="form-check-label" for="puede_pregrado">
+        Pregrado
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" value="1" id="puede_maestria"
+             name="puede_maestria"
+             {% if docente and docente.puede_maestria %}checked{% endif %}>
+      <label class="form-check-label" for="puede_maestria">
+        Maestría
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" value="1" id="puede_doctorado"
+             name="puede_doctorado"
+             {% if docente and docente.puede_doctorado %}checked{% endif %}>
+      <label class="form-check-label" for="puede_doctorado">
+        Doctorado
+      </label>
+    </div>
+  </div>
+
+  {# ====== GRADOS / TÍTULOS PRINCIPALES ====== #}
+  <div class="col-12 mt-3">
+    <h5>Grados y títulos principales</h5>
+    <hr class="mt-1">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Título profesional</label>
+    <input type="text" name="titulo_profesional"
+           value="{{ docente.titulo_profesional if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Fecha título profesional</label>
+    <input type="text" name="titulo_fecha"
+           value="{{ docente.titulo_fecha if docente else '' }}"
+           class="form-control" placeholder="Ej. 31-03-1976">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Univ. título profesional</label>
+    <input type="text" name="titulo_universidad"
+           value="{{ docente.titulo_universidad if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Grado de magíster</label>
+    <input type="text" name="grado_magister"
+           value="{{ docente.grado_magister if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Fecha magíster</label>
+    <input type="text" name="magister_fecha"
+           value="{{ docente.magister_fecha if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Univ. magíster</label>
+    <input type="text" name="magister_universidad"
+           value="{{ docente.magister_universidad if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Grado de doctor</label>
+    <input type="text" name="grado_doctor"
+           value="{{ docente.grado_doctor if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Fecha doctorado</label>
+    <input type="text" name="doctor_fecha"
+           value="{{ docente.doctor_fecha if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Univ. doctorado</label>
+    <input type="text" name="doctor_universidad"
+           value="{{ docente.doctor_universidad if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Mayor grado académico</label>
+    {% set mayor = docente.mayor_grado_academico if docente else '' %}
+    <select name="mayor_grado_academico" class="form-select">
+      <option value="">Sin especificar</option>
+      <option value="BACHILLER" {% if mayor == 'BACHILLER' %}selected{% endif %}>Bachiller</option>
+      <option value="TITULO" {% if mayor == 'TITULO' %}selected{% endif %}>Título profesional</option>
+      <option value="MAGISTER" {% if mayor == 'MAGISTER' %}selected{% endif %}>Magíster</option>
+      <option value="DOCTOR" {% if mayor == 'DOCTOR' %}selected{% endif %}>Doctor</option>
+    </select>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Mención del mayor grado</label>
+    <input type="text" name="mayor_grado_mencion"
+           value="{{ docente.mayor_grado_mencion if docente else '' }}"
+           class="form-control">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Universidad de procedencia principal</label>
+    <input type="text" name="universidad_procedencia"
+           value="{{ docente.universidad_procedencia if docente else '' }}"
+           class="form-control">
+  </div>
+
+  {# ====== OTROS DATOS ====== #}
+  <div class="col-12 mt-3">
+    <h5>Antecedentes y CV</h5>
+    <hr class="mt-1">
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">Tiene CV</label>
+    <div class="form-check mt-2">
       <input class="form-check-input" type="checkbox" value="1" id="tiene_cv"
              name="tiene_cv"
              {% if docente and docente.tiene_cv %}checked{% endif %}>
@@ -86,7 +332,7 @@
     </div>
   </div>
 
-  <div class="col-md-5">
+  <div class="col-md-4">
     <label class="form-label">Link al CV (Drive, etc.)</label>
     <input type="text" name="link_cv"
            value="{{ docente.link_cv if docente else '' }}"
@@ -98,6 +344,11 @@
     <input type="text" name="fecha_recepcion_cv"
            value="{{ docente.fecha_recepcion_cv if docente else '' }}"
            class="form-control" placeholder="Ej. 10-11-2025">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Antecedentes</label>
+    <textarea name="antecedentes" rows="3" class="form-control">{{ docente.antecedentes if docente else '' }}</textarea>
   </div>
 
   <div class="col-12 mt-3 d-flex justify-content-between">
