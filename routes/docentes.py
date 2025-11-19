@@ -159,7 +159,7 @@ def register_docentes_routes(app):
             # 👉 NUEVO: para el botón de export SUNEDU en esta vista
             periodos_academicos=periodos_academicos,
         )
-        
+
     @app.route("/docentes/<int:docente_id>/sugerencias")
     def docente_sugerencias(docente_id):
         """
@@ -344,6 +344,7 @@ def register_docentes_routes(app):
             )
 
             antecedentes = request.form.get("antecedentes", "").strip() or None
+            observaciones = request.form.get("observaciones", "").strip() or None
 
             if not nombre_completo:
                 flash("Nombre completo es obligatorio", "danger")
@@ -386,13 +387,14 @@ def register_docentes_routes(app):
                         mayor_grado_academico,
                         mayor_grado_mencion,
                         antecedentes,
+                        observaciones,
                         tipo_docente,
                         tiene_cv,
                         link_cv,
                         fecha_recepcion_cv
                     ) VALUES (
                         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                     )
                     """,
                     (
@@ -428,6 +430,7 @@ def register_docentes_routes(app):
                         mayor_grado_academico,
                         mayor_grado_mencion,
                         antecedentes,
+                        observaciones,
                         tipo_docente,
                         tiene_cv,
                         link_cv,
@@ -531,6 +534,7 @@ def register_docentes_routes(app):
             )
 
             antecedentes = request.form.get("antecedentes", "").strip() or None
+            observaciones = request.form.get("observaciones", "").strip() or None
 
             if not nombre_completo:
                 flash("Nombre completo es obligatorio", "danger")
@@ -573,6 +577,7 @@ def register_docentes_routes(app):
                         mayor_grado_academico = ?,
                         mayor_grado_mencion = ?,
                         antecedentes = ?,
+                        observaciones = ?,
                         tipo_docente = ?,
                         tiene_cv = ?,
                         link_cv = ?,
@@ -613,6 +618,7 @@ def register_docentes_routes(app):
                         mayor_grado_academico,
                         mayor_grado_mencion,
                         antecedentes,
+                        observaciones,
                         tipo_docente,
                         tiene_cv,
                         link_cv,
@@ -673,6 +679,56 @@ def register_docentes_routes(app):
         conn.close()
 
         flash(msg, "info")
+
+        return redirect(
+            url_for(
+                "docentes_list",
+                q=q,
+                tipo_docente=tipo_docente,
+                periodo_propuesto_id=periodo_propuesto_id,
+                solo_con_cv=solo_con_cv,
+                solo_propuestos=solo_propuestos,
+                solo_sugeridos=solo_sugeridos,
+            )
+        )
+
+    @app.route("/docentes/<int:docente_id>/eliminar", methods=["POST"])
+    def docente_eliminar(docente_id):
+        """
+        Eliminación lógica de docente (activo = 0).
+        Conserva historial de cursos, propuestos, etc.
+        """
+        q = request.form.get("q", "")
+        tipo_docente = request.form.get("tipo_docente", "")
+        periodo_propuesto_id = request.form.get("periodo_propuesto_id", "")
+        solo_con_cv = request.form.get("solo_con_cv", "")
+        solo_propuestos = request.form.get("solo_propuestos", "")
+        solo_sugeridos = request.form.get("solo_sugeridos", "")
+
+        conn = get_db_connection()
+        docente = conn.execute(
+            "SELECT id, nombre_completo FROM docente WHERE id = ?",
+            (docente_id,),
+        ).fetchone()
+
+        if not docente:
+            conn.close()
+            flash("Docente no encontrado", "danger")
+            return redirect(url_for("docentes_list"))
+
+        conn.execute(
+            """
+            UPDATE docente
+            SET activo = 0,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (docente_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        flash(f"Docente '{docente['nombre_completo']}' eliminado (inactivo).", "success")
 
         return redirect(
             url_for(

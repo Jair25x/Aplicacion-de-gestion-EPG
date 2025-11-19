@@ -16,7 +16,7 @@ DB_PATH = os.getenv("DOCENTES_DB_PATH", str(BASE_DIR / "docentes.db"))
 
 # Carpeta donde se guardan las cartas generadas
 CARTAS_OUTPUT_DIR = BASE_DIR / "cartas_invitacion"
-CARTAS_OUTPUT_DIR.mkdir(exist_ok=True)
+CARTAS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Plantilla de la carta de invitación
 PLANTILLA_CARTA = BASE_DIR / "plantilla_carta.docx"

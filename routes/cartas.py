@@ -7,7 +7,8 @@ from generar_cartas import (
     fecha_larga_es,
     calc_remuneracion,
     limpiar_nombre_archivo,
-    extraer_paterno_y_nombre,
+    extraer_titulo_paterno_nombre,
+    MESES_ES,
 )
 from utils_programas import normalizar_programa_base
 from io import BytesIO
@@ -86,7 +87,7 @@ def register_cartas_routes(app):
         except ValueError:
             next_num = None
 
-        # Info del período (para carpeta y MES)
+        # Info del período (para carpeta)
         periodo_row = None
         if periodo_id:
             periodo_row = cur.execute(
@@ -124,8 +125,12 @@ def register_cartas_routes(app):
         # Carpeta específica del período
         if periodo_row:
             etiqueta_periodo = periodo_row["etiqueta"]
+            periodo_anio_default = periodo_row["anio"]
+            periodo_mes_default = periodo_row["mes"]
         else:
             etiqueta_periodo = rows[0]["periodo_etiqueta"]
+            periodo_anio_default = rows[0]["periodo_anio"]
+            periodo_mes_default = rows[0]["periodo_mes"]
 
         subdir_name = f"Cartas de invitación {etiqueta_periodo}"
         output_dir = CARTAS_OUTPUT_DIR / subdir_name
@@ -141,7 +146,7 @@ def register_cartas_routes(app):
                 programa_tipo = (row["programa_tipo"] or "").upper()
                 programa_modalidad = (row["programa_modalidad"] or "").strip()
 
-                # Programa base
+                # Programa base (texto)
                 programa_base = normalizar_programa_base(
                     programa_nombre, programa_tipo
                 )
@@ -166,11 +171,29 @@ def register_cartas_routes(app):
                 sem1 = row["sem1"] or ""
                 sem2 = row["sem2"] or ""
 
+                # Fecha larga SIEMPRE actual
                 fecha_larga, anio = fecha_larga_es(None)
                 ciudad = "Cusco"
 
-                periodo_etiqueta_row = row["periodo_etiqueta"] or etiqueta_periodo
-                mes_tabla = (periodo_etiqueta_row or "").upper()
+                # MES en la tabla: a partir de periodo.anio / periodo.mes
+                anio_periodo = row["periodo_anio"] or periodo_anio_default
+                mes_periodo = row["periodo_mes"] or periodo_mes_default
+
+                mes_tabla = ""
+                try:
+                    mes_int = int(mes_periodo)
+                    if 1 <= mes_int <= 12:
+                        mes_nombre = MESES_ES[mes_int - 1]
+                        mes_tabla = f"{mes_nombre.upper()} {anio_periodo}"
+                except Exception:
+                    mes_tabla = ""
+
+                if not mes_tabla:
+                    # Fallback: etiqueta de periodo en mayúsculas
+                    periodo_etiqueta_row = (
+                        row["periodo_etiqueta"] or etiqueta_periodo
+                    )
+                    mes_tabla = (periodo_etiqueta_row or "").upper()
 
                 # Remuneración por tabla (o override explícito)
                 override = None
@@ -179,18 +202,20 @@ def register_cartas_routes(app):
                 remuneracion_num = calc_remuneracion(programa_texto, override)
                 remuneracion = remuneracion_num
 
+                # Numeración de carta con ceros a la izquierda
                 if next_num is not None:
-                    numero = str(next_num)
+                    numero = f"{next_num:03d}"
                     next_num += 1
                 else:
+                    # Si no se indicó inicio, usamos "000"
                     numero = "000"
 
-                titulo = ""
+                titulo = ""  # si luego quieres "Dr." etc., se puede usar aquí
 
                 context = {
                     "ciudad": ciudad,
                     "fecha_larga": fecha_larga,
-                    "numero": numero,
+                    "numero": numero,      # se usará en la plantilla: CARTA Nº {{ numero }}-{{ anio }}-EPG-UAC
                     "anio": anio,
                     "titulo": titulo,
                     "docente": docente,
@@ -210,11 +235,18 @@ def register_cartas_routes(app):
                     "remuneracion": remuneracion,
                 }
 
+                # Render de la plantilla DOCX
                 tpl = DocxTemplate(str(PLANTILLA_CARTA))
                 tpl.render(context)
 
-                paterno, nombre = extraer_paterno_y_nombre(docente)
-                file_stub = f"CARTA N°{numero} {paterno} {nombre}"
+                # Nombre de archivo: "CARTA N°{numero} {TITULO} {PATERNO} {NOMBRE}.docx"
+                titulo_abrev, paterno, nombre = extraer_titulo_paterno_nombre(docente)
+
+                if titulo_abrev:
+                    file_stub = f"CARTA N°{numero} {titulo_abrev} {paterno} {nombre}"
+                else:
+                    file_stub = f"CARTA N°{numero} {paterno} {nombre}"
+
                 filename_docx = limpiar_nombre_archivo(file_stub) + ".docx"
 
                 out_path = output_dir / filename_docx
@@ -228,9 +260,23 @@ def register_cartas_routes(app):
                 if TRY_PDF_WEB and docx2pdf_convert is not None:
                     try:
                         out_pdf_path = out_path.with_suffix(".pdf")
-                        docx2pdf_convert(str(out_path), str(out_pdf_path))
+
+                        # Intentar inicializar COM explícitamente en Windows
+                        try:
+                            import pythoncom  # requiere pywin32
+                            pythoncom.CoInitialize()
+                            try:
+                                docx2pdf_convert(str(out_path), str(out_pdf_path))
+                            finally:
+                                pythoncom.CoUninitialize()
+                        except ImportError:
+                            # Si no está pythoncom, igual intentamos la conversión directa
+                            docx2pdf_convert(str(out_path), str(out_pdf_path))
+
+                        # Agregar PDF al ZIP
                         with open(out_pdf_path, "rb") as fpdf:
                             zf.writestr(out_pdf_path.name, fpdf.read())
+
                     except Exception as e:
                         print(
                             f"[Aviso] No se pudo generar PDF para "

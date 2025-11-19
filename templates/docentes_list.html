@@ -255,6 +255,11 @@
              id="col_propuesto" data-col="propuesto" checked>
       <label class="form-check-label" for="col_propuesto">Propuesto</label>
     </div>
+    <div class="form-check form-check-inline">
+      <input class="form-check-input docente-col-toggle" type="checkbox"
+             id="col_observaciones" data-col="observaciones" checked>
+      <label class="form-check-label" for="col_observaciones">Observaciones</label>
+    </div>
   </div>
 </div>
 
@@ -274,7 +279,8 @@
         <th data-col="cursos">Cursos período actual</th>
         <th data-col="sugeridos">Sugerido en cursos (período actual)</th>
         <th data-col="propuesto">Propuesto período seleccionado</th>
-        <th style="width: 7rem;">Acciones</th>
+        <th data-col="observaciones">Observaciones / antecedentes</th>
+        <th style="width: 9rem;">Acciones</th>
       </tr>
     </thead>
     <tbody>
@@ -394,6 +400,21 @@
             {% endif %}
           {% endif %}
         </td>
+        <td data-col="observaciones">
+          {# Primero usamos observaciones; si está vacío, usamos antecedentes #}
+          {% set texto_obs = d.observaciones or d.antecedentes %}
+          {% if texto_obs %}
+            <span
+              class="text-truncate d-inline-block"
+              style="max-width: 260px;"
+              title="{{ texto_obs }}"
+            >
+              {{ texto_obs }}
+            </span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
         <td>
           <div class="btn-group btn-group-sm" role="group">
             <a
@@ -410,12 +431,32 @@
             >
               ✏️ Editar
             </a>
+            <form
+              method="post"
+              action="{{ url_for('docente_eliminar', docente_id=d.id) }}"
+              class="d-inline-block ms-1"
+              onsubmit="return confirm('¿Seguro que deseas eliminar (inactivar) al docente {{ d.nombre_completo }}?');"
+            >
+              <input type="hidden" name="q" value="{{ q }}">
+              <input type="hidden" name="tipo_docente" value="{{ tipo_docente }}">
+              <input type="hidden" name="periodo_propuesto_id" value="{{ periodo_propuesto_id }}">
+              <input type="hidden" name="solo_con_cv" value="{{ '1' if solo_con_cv else '' }}">
+              <input type="hidden" name="solo_propuestos" value="{{ '1' if solo_propuestos else '' }}">
+              <input type="hidden" name="solo_sugeridos" value="{{ '1' if solo_sugeridos else '' }}">
+              <button
+                type="submit"
+                class="btn btn-outline-danger"
+                title="Eliminar (marcar como inactivo)"
+              >
+                🗑
+              </button>
+            </form>
           </div>
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="12" class="text-center text-muted py-4">
+        <td colspan="13" class="text-center text-muted py-4">
           No se encontraron docentes con estos filtros.
         </td>
       </tr>

@@ -4,7 +4,7 @@ from db import get_db_connection
 from io import StringIO, BytesIO
 import csv
 from docx import Document
-from docx.shared import Cm
+from docx.shared import Cm, Pt
 from docx.enum.section import WD_ORIENT
 
 from utils_programas import (
@@ -16,6 +16,16 @@ from utils_programas import (
 
 
 def register_export_routes(app):
+    # Adecuacion de formatos
+    def set_table_font_size(table, size_pt: int):
+        """
+        Ajusta la fuente de todo el contenido de la tabla al tamaño indicado (en puntos).
+        """
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(size_pt)
 
     # ========================
     # 4) EXPORTACIÓN CSV
@@ -190,11 +200,36 @@ def register_export_routes(app):
     # ========================
 
     def pick_universidad(r):
+        """
+        Devuelve la universidad asociada al MAYOR grado del docente.
+
+        Regla:
+        - Si tiene doctor_universidad -> se asume mayor grado (Doctorado).
+        - Si no, se usa magister_universidad.
+        - Si no, se usa titulo_universidad.
+        - Si nada de lo anterior, se cae a universidad_procedencia.
+        """
+
+        def _get(key):
+            if r is None:
+                return None
+
+            # Si viniera como dict normal
+            if isinstance(r, dict):
+                return r.get(key)
+
+            # Para sqlite3.Row (y otros tipos con acceso por índice/clave)
+            try:
+                return r[key]
+            except (KeyError, IndexError, TypeError):
+                return None
+
         for k in ("doctor_universidad", "magister_universidad", "titulo_universidad"):
-            val = r[k]
+            val = _get(k)
             if val:
                 return val
-        return r["universidad_procedencia"] or ""
+
+        return _get("universidad_procedencia") or ""
 
     @app.route("/export/programacion.docx")
     def export_programacion_docx():
@@ -442,7 +477,7 @@ def register_export_routes(app):
                     if col_observaciones:
                         extra_cols.append("Observaciones")
                     if col_universidad:
-                        extra_cols.append("Universidad de último grado")
+                        extra_cols.append("Universidad mayor grado")
                     if col_telefono:
                         extra_cols.append("Teléfono")
                     if col_correo:
@@ -471,7 +506,27 @@ def register_export_routes(app):
                     for rdata in cursos_prog_ordenados:
                         row_cells = table.add_row().cells
                         row_cells[0].text = f"{n:02d}"
-                        row_cells[1].text = rdata["docente"] or ""
+
+                        # Docente + universidad de mayor grado con espacio (línea en blanco) entre ambos
+                        docente_nombre = rdata["docente"] or ""
+                        universidad_mayor = pick_universidad(rdata)
+
+                        cell_docente = row_cells[1]
+                        # Limpiar contenido actual
+                        cell_docente.text = ""
+
+                        # Primer párrafo: nombre del docente
+                        p_nombre = cell_docente.paragraphs[0]
+                        p_nombre.add_run(docente_nombre)
+
+                        if universidad_mayor:
+                            # Segundo párrafo: línea en blanco (espacio visual entre nombre y universidad)
+                            cell_docente.add_paragraph("")
+
+                            # Tercer párrafo: universidad
+                            p_uni = cell_docente.add_paragraph()
+                            p_uni.add_run(universidad_mayor)
+
                         row_cells[2].text = rdata["programa"] or ""
                         row_cells[3].text = rdata["ciclo"] or ""
                         row_cells[4].text = rdata["asignatura"] or ""
@@ -512,6 +567,8 @@ def register_export_routes(app):
 
                         n += 1
 
+                    set_table_font_size(table, 8)
+
                     docx.add_paragraph("")
 
             return n
@@ -544,7 +601,7 @@ def register_export_routes(app):
             if col_observaciones:
                 extra_cols.append("OBSERVACIONES")
             if col_universidad:
-                extra_cols.append("Universidad")
+                extra_cols.append("Universidad mayor grado")
             if col_telefono:
                 extra_cols.append("Teléfono")
             if col_correo:
@@ -565,7 +622,21 @@ def register_export_routes(app):
             for rdata in rows_ordin:
                 row_cells = table.add_row().cells
                 row_cells[0].text = f"{n:02d}"
-                row_cells[1].text = rdata["docente"] or ""
+
+                docente_nombre = rdata["docente"] or ""
+                universidad_mayor = pick_universidad(rdata)
+
+                cell_docente = row_cells[1]
+                cell_docente.text = ""
+
+                p_nombre = cell_docente.paragraphs[0]
+                p_nombre.add_run(docente_nombre)
+
+                if universidad_mayor:
+                    cell_docente.add_paragraph("")  # línea en blanco
+                    p_uni = cell_docente.add_paragraph()
+                    p_uni.add_run(universidad_mayor)
+
                 row_cells[2].text = rdata["programa"] or ""
                 row_cells[3].text = rdata["ciclo"] or ""
                 row_cells[4].text = rdata["asignatura"] or ""
@@ -601,6 +672,8 @@ def register_export_routes(app):
 
                 n += 1
 
+            set_table_font_size(table, 8)
+            
             docx.add_paragraph("")
             return n
 

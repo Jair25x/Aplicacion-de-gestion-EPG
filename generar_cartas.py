@@ -168,33 +168,103 @@ def limpiar_nombre_archivo(nombre: str) -> str:
 
 
 # ============================
-# 4) Extraer paterno y nombre
+# 4) Extraer título, paterno y nombre
 # ============================
+
+_TITULOS_INICIALES = {
+    "DR", "DRA",
+    "MG", "MGS", "MBA", "MSC",
+    "LIC", "ING", "ARQ",
+    "MEDICO", "MÉDICO", "PSIC",
+    "ABOG", "ABOGADO", "ABOGADA",
+}
+
 
 def extraer_paterno_y_nombre(nombre_completo: str) -> Tuple[str, str]:
     """
-    A partir de un nombre completo en formato usual peruano:
-        'APELLIDO_PATERNO APELLIDO_MATERNO NOMBRES...'
-
-    devuelve (paterno, nombre) para usar en:
-        'CARTA N°001 PATERNO NOMBRE'
-
-    Reglas simples:
-    - Si solo hay una palabra -> (PALABRA, "")
-    - Si hay dos palabras    -> (primera, segunda)
-    - Si hay 3 o más         -> (primera, última)
+    Versión simplificada que devuelve solo (paterno, nombre) y
+    **descarta** títulos como DR., DRA., MG., etc.
+    Se mantiene para compatibilidad con el script CLI anterior.
     """
     if not nombre_completo:
         return "DOCENTE", ""
 
     partes = nombre_completo.strip().split()
 
+    # Quitar títulos al inicio (DR., DRA., MG., LIC., etc.)
+    while partes:
+        token = partes[0].upper().rstrip(".")
+        if token in _TITULOS_INICIALES:
+            partes.pop(0)
+        else:
+            break
+
+    if not partes:
+        return "DOCENTE", ""
+
     if len(partes) == 1:
         return partes[0].upper(), ""
     if len(partes) == 2:
         return partes[0].upper(), partes[1].upper()
 
-    # 3 o más palabras
     paterno = partes[0].upper()
     nombre = partes[-1].upper()
     return paterno, nombre
+
+
+def extraer_titulo_paterno_nombre(nombre_completo: str) -> Tuple[str, str, str]:
+    """
+    Versión extendida para nombres tipo:
+        'DRA. MIRIAM CLEDY ZARATE MUÑIZ'
+        'Mg. Del Carpio Gamarra Manuel Jesus'
+        'DR JUAN PEREZ LOPEZ'
+
+    Devuelve:
+        (titulo, paterno, nombre)
+
+    Ejemplos:
+      'DRA. MIRIAM CLEDY ZARATE MUÑIZ'  -> ('DRA', 'ZARATE', 'MIRIAM')
+      'Mg. Del Carpio Gamarra Manuel Jesus' -> ('MG', 'GAMARRA', 'MANUEL')
+      'MIRIAM CLEDY ZARATE MUÑIZ'      -> ('', 'ZARATE', 'MIRIAM')
+    """
+    if not nombre_completo:
+        return "", "DOCENTE", ""
+
+    partes = nombre_completo.strip().split()
+
+    # 1) Extraer uno o más títulos iniciales
+    titulos = []
+    while partes:
+        token_raw = partes[0]
+        token_norm = token_raw.upper().rstrip(".")
+        if token_norm in _TITULOS_INICIALES:
+            titulos.append(token_norm)  # ej. "DRA", "MG"
+            partes.pop(0)
+        else:
+            break
+
+    titulo = " ".join(titulos)  # "DRA", "MG", "DR", etc.
+
+    # 2) Si después de quitar títulos ya no queda nada
+    if not partes:
+        if not titulo:
+            return "", "DOCENTE", ""
+        return titulo, "DOCENTE", ""
+
+    # 3) Calcular paterno y nombre a partir del resto
+    if len(partes) == 1:
+        paterno = partes[0].upper()
+        nombre = ""
+    elif len(partes) == 2:
+        paterno = partes[0].upper()
+        nombre = partes[1].upper()
+    else:
+        # Heurística: primer token = apellido paterno, último token = primer nombre
+        paterno = partes[-2].upper()   # ej. 'ZARATE' en 'MIRIAM CLEDY ZARATE MUÑIZ'
+        nombre = partes[-3].upper() if len(partes) >= 3 else partes[0].upper()
+
+        # Si prefieres paterno primer token y nombre último, usa:
+        # paterno = partes[0].upper()
+        # nombre = partes[-1].upper()
+
+    return titulo, paterno, nombre
