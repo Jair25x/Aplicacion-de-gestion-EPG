@@ -1,8 +1,17 @@
 # cargar_sumillas_doctorado_ciencias_educacion.py
 #
 # Script para:
-# 1) Configurar silabo_programa_config para el Doctorado en Ciencias de la Educación
+# 1) Configurar silabo_programa_config para TODAS las promociones del
+#    Doctorado en Ciencias de la Educación (DCE)
 # 2) Cargar / actualizar las sumillas de los cursos en silabo_curso_base
+#
+# NOTA:
+# - Este script se ejecuta manualmente (como prefieres) cuando quieras poblar
+#   config + sumillas para DCE.
+# - Requiere:
+#   * programa_academico con promociones DCE registradas.
+#   * silabo_programa_config con UNIQUE(programa_id).
+#   * silabo_curso_base con UNIQUE(programa_id, codigo).
 
 import sqlite3
 import sys
@@ -13,7 +22,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent  # .../gestion-docentes-app
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from db import get_db_connection
+from db import get_db_connection  # noqa: E402
+
 # =====================================================
 # 1) Perfil del egresado + resultados de aprendizaje
 #    (texto que irá en silabo_programa_config)
@@ -367,101 +377,123 @@ principios básicos de redacción; proceso de publicación y difusión de artíc
 ]
 
 
-def main():
-    conn = get_db_connection()
+def seed_dce(conn: sqlite3.Connection) -> None:
+    """
+    Carga config + sumillas para TODAS las promociones del Doctorado en
+    Ciencias de la Educación registradas en programa_academico.
+    """
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # 1) Buscar programa "Doctorado en Ciencias de la Educación"
-    prog = cur.execute(
+    # 1) Buscar TODAS las promociones DCE
+    progs = cur.execute(
         """
-        SELECT id, nombre_corto
+        SELECT id, nombre_corto, modalidad
         FROM programa_academico
         WHERE tipo = 'DOCTORADO'
           AND nombre_corto LIKE '%Ciencias de la Educación%'
+        ORDER BY id
         """
-    ).fetchone()
+    ).fetchall()
 
-    if not prog:
+    if not progs:
         raise SystemExit(
-            "No se encontró el programa de Doctorado en Ciencias de la Educación en programa_academico.\n"
+            "No se encontraron promociones del Doctorado en Ciencias de la Educación.\n"
             "Verifica el campo nombre_corto."
         )
 
-    programa_id = prog["id"]
-    print(f"Usando programa_id = {programa_id} ({prog['nombre_corto']})")
+    print(f"Se encontraron {len(progs)} promociones DCE.\n")
 
-    # 2) Upsert en silabo_programa_config
-    cur.execute(
-        """
-        INSERT INTO silabo_programa_config (
-            programa_id,
-            nombre_programa,
-            plantilla_archivo,
-            numero_creditos,
-            horas_teoricas,
-            horas_practicas,
-            modalidad_default,
-            horario_texto,
-            inicio_semestre,
-            fin_semestre,
-            perfil_egresado,
-            resultados_aprendizaje
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(programa_id) DO UPDATE SET
-            nombre_programa      = excluded.nombre_programa,
-            plantilla_archivo    = excluded.plantilla_archivo,
-            numero_creditos      = excluded.numero_creditos,
-            horas_teoricas       = excluded.horas_teoricas,
-            horas_practicas      = excluded.horas_practicas,
-            modalidad_default    = excluded.modalidad_default,
-            horario_texto        = excluded.horario_texto,
-            inicio_semestre      = excluded.inicio_semestre,
-            fin_semestre         = excluded.fin_semestre,
-            perfil_egresado      = excluded.perfil_egresado,
-            resultados_aprendizaje = excluded.resultados_aprendizaje,
-            updated_at           = datetime('now')
-        ;
-        """,
-        (
-            programa_id,
-            "DOCTORADO EN CIENCIAS DE LA EDUCACIÓN",
-            "doctorado_ciencias_educacion_silabo.docx",  # tu plantilla
-            4,      # créditos por defecto
-            40,     # horas teóricas
-            48,     # horas prácticas
-            "PRESENCIAL",  # modalidad por defecto (se sobreescribe por curso si hace falta)
-            "vie. 17:00 a 22:00; sáb. 8:00 a 13:00 y 16:00 a 21:00; dom. 8:00 a 13:00",
-            "1 de agosto de 2025",
-            "31 de diciembre de 2025",
-            PERFIL_EGRESADO_DCE,
-            RESULTADOS_APRENDIZAJE_DCE,
-        ),
-    )
+    for prog in progs:
+        programa_id = prog["id"]
+        nombre_corto = prog["nombre_corto"]
+        modalidad_prog = (prog["modalidad"] or "PRESENCIAL").strip().upper()
 
-    # 3) Insertar / actualizar sumillas en silabo_curso_base
-    for curso in CURSOS_DCE:
+        print(f"==> Programa: {nombre_corto}")
+        print(f"    programa_id = {programa_id}")
+        print(f"    modalidad_default = {modalidad_prog}")
+
+        # 2) Upsert en silabo_programa_config POR CADA PROMOCIÓN
         cur.execute(
             """
-            INSERT INTO silabo_curso_base (programa_id, codigo, asignatura, sumilla)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(programa_id, codigo) DO UPDATE SET
-                asignatura = excluded.asignatura,
-                sumilla    = excluded.sumilla,
-                updated_at = datetime('now')
+            INSERT INTO silabo_programa_config (
+                programa_id,
+                nombre_programa,
+                plantilla_archivo,
+                numero_creditos,
+                horas_teoricas,
+                horas_practicas,
+                modalidad_default,
+                horario_texto,
+                inicio_semestre,
+                fin_semestre,
+                perfil_egresado,
+                resultados_aprendizaje
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(programa_id) DO UPDATE SET
+                nombre_programa        = excluded.nombre_programa,
+                plantilla_archivo      = excluded.plantilla_archivo,
+                numero_creditos        = excluded.numero_creditos,
+                horas_teoricas         = excluded.horas_teoricas,
+                horas_practicas        = excluded.horas_practicas,
+                modalidad_default      = excluded.modalidad_default,
+                horario_texto          = excluded.horario_texto,
+                inicio_semestre        = excluded.inicio_semestre,
+                fin_semestre           = excluded.fin_semestre,
+                perfil_egresado        = excluded.perfil_egresado,
+                resultados_aprendizaje = excluded.resultados_aprendizaje,
+                updated_at             = datetime('now')
             ;
             """,
             (
                 programa_id,
-                curso["codigo"],
-                curso["asignatura"],
-                curso["sumilla"],
+                "DOCTORADO EN CIENCIAS DE LA EDUCACIÓN",
+                "doctorado_ciencias_educacion_silabo.docx",  # tu plantilla
+                4,      # créditos por defecto
+                40,     # horas teóricas
+                48,     # horas prácticas
+                modalidad_prog,  # usa modalidad real de la promoción
+                "vie. 17:00 a 22:00; sáb. 8:00 a 13:00 y 16:00 a 21:00; dom. 8:00 a 13:00",
+                "1 de agosto de 2025",
+                "31 de diciembre de 2025",
+                PERFIL_EGRESADO_DCE,
+                RESULTADOS_APRENDIZAJE_DCE,
             ),
         )
 
+        # 3) Insertar / actualizar sumillas en silabo_curso_base
+        for curso in CURSOS_DCE:
+            cur.execute(
+                """
+                INSERT INTO silabo_curso_base (programa_id, codigo, asignatura, sumilla)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(programa_id, codigo) DO UPDATE SET
+                    asignatura = excluded.asignatura,
+                    sumilla    = excluded.sumilla,
+                    updated_at = datetime('now')
+                ;
+                """,
+                (
+                    programa_id,
+                    curso["codigo"],
+                    curso["asignatura"],
+                    curso["sumilla"],
+                ),
+            )
+
+        print(f"    -> Sumillas cargadas/actualizadas: {len(CURSOS_DCE)}\n")
+
     conn.commit()
-    print(f"Se actualizaron {len(CURSOS_DCE)} sumillas para el Doctorado en Ciencias de la Educación.")
+    print("✅ Config + sumillas DCE actualizadas para todas las promociones.")
+
+
+def main():
+    conn = get_db_connection()
+    try:
+        seed_dce(conn)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

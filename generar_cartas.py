@@ -299,6 +299,25 @@ def _reemplazar_tokens_en_elemento(elemento, mapping: dict) -> None:
                 _reemplazar_tokens_en_elemento(celda, mapping)
 
 
+def _normalizar_asignatura(texto: str) -> str:
+    """
+    Normaliza texto para comparar asignaturas:
+    - quita tildes
+    - pasa a mayúsculas
+    - elimina signos/puntos
+    - colapsa espacios
+    """
+    if not texto:
+        return ""
+    s = texto.strip()
+    s = _strip_accents(s)
+    s = s.upper()
+    # quitar cualquier cosa que no sea letra/número/espacio
+    s = re.sub(r"[^A-Z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 def generar_silabo_curso(db, curso_row):
     """
     Genera el sílabo (.docx) para un curso_programado.
@@ -336,11 +355,13 @@ def generar_silabo_curso(db, curso_row):
             "No hay configuración de sílabo para este programa (silabo_programa_config)."
         )
 
-    # 2) Sumilla base (por código o por asignatura)
+    # 2) Sumilla base (por código o por asignatura normalizada)
     sumilla = ""
 
     fila_sumilla = None
-    if curso_row["codigo"]:
+
+    # 2.1 Intento por código (si los códigos coinciden)
+    if curso_row.get("codigo"):
         fila_sumilla = db.execute(
             """
             SELECT sumilla
@@ -351,24 +372,43 @@ def generar_silabo_curso(db, curso_row):
             (curso_row["programa_id"], curso_row["codigo"]),
         ).fetchone()
 
-    if not fila_sumilla and curso_row["asignatura"]:
-        fila_sumilla = db.execute(
+    # 2.2 Si no hay por código, buscamos por asignatura normalizada
+    if not fila_sumilla and curso_row.get("asignatura"):
+        asignatura_obj = _normalizar_asignatura(curso_row["asignatura"])
+
+        filas_base = db.execute(
             """
-            SELECT sumilla
+            SELECT asignatura, sumilla
             FROM silabo_curso_base
             WHERE programa_id = ?
-              AND UPPER(asignatura) = UPPER(?)
             """,
-            (curso_row["programa_id"], curso_row["asignatura"]),
-        ).fetchone()
+            (curso_row["programa_id"],),
+        ).fetchall()
+
+        mapa = {}
+        for f in filas_base:
+            key = _normalizar_asignatura(f["asignatura"])
+            if key and key not in mapa:
+                mapa[key] = f["sumilla"]
+
+        sumilla = mapa.get(asignatura_obj, "")
+
+        if not sumilla:
+            print(
+                f"[Aviso] No se encontró sumilla para '{curso_row['asignatura']}' "
+                f"(normalizada='{asignatura_obj}') en programa_id={curso_row['programa_id']}."
+            )
 
     if fila_sumilla:
         sumilla = fila_sumilla["sumilla"]
 
     # 3) Derivar textos
-    periodo_acad = curso_row["periodo_academico"] or ""
-    modalidad = (curso_row["modalidad_dictado"] or prog_conf["modalidad_default"] or "").upper()
-
+    periodo_acad = curso_row.get("periodo_academico") or ""
+    modalidad = (curso_row.get("modalidad_dictado") or prog_conf["modalidad_default"] or "").upper()
+    if modalidad == "DISTANCIA":
+        modalidad_titulo = "A DISTANCIA"
+    else:
+        modalidad_titulo = modalidad
     horas_tp = f"{prog_conf['horas_teoricas']} HT – {prog_conf['horas_practicas']} HP"
     num_cred = str(prog_conf["numero_creditos"])
 
@@ -378,12 +418,12 @@ def generar_silabo_curso(db, curso_row):
         anio = periodo_acad.split("-")[0] if "-" in periodo_acad else ""
         inicio_fin = anio
 
-    horario = prog_conf["horario_texto"] or (curso_row["horas_texto"] or "")
+    horario = prog_conf["horario_texto"] or (curso_row.get("horas_texto") or "")
 
-    docente_nombre = curso_row["docente_nombre"] or ""
-    docente_correo = curso_row["docente_correo"] or ""
+    docente_nombre = curso_row.get("docente_nombre") or ""
+    docente_correo = curso_row.get("docente_correo") or ""
 
-    asignatura = curso_row["asignatura"] or ""
+    asignatura = curso_row.get("asignatura") or ""
     asignatura_titulo = asignatura.upper()
 
     # 4) Determinar plantilla
@@ -398,14 +438,14 @@ def generar_silabo_curso(db, curso_row):
     # 5) Mapeo de tokens -> valores
     mapping = {
         "{{NOMBRE_PROGRAMA}}": prog_conf["nombre_programa"],
-        "{{MODALIDAD_TITULO}}": modalidad,
+        "{{MODALIDAD_TITULO}}": modalidad_titulo,
         "{{ASIGNATURA_TITULO}}": asignatura_titulo,
 
         "{{ASIGNATURA}}": asignatura,
-        "{{CODIGO_ASIGNATURA}}": curso_row["codigo"] or "",
-        "{{CATEGORIA}}": curso_row["categoria"] or "",
+        "{{CODIGO_ASIGNATURA}}": curso_row.get("codigo") or "",
+        "{{CATEGORIA}}": curso_row.get("categoria") or "",
         "{{SEMESTRE_ACADEMICO}}": periodo_acad,
-        "{{CICLO}}": curso_row["ciclo"] or "",
+        "{{CICLO}}": curso_row.get("ciclo") or "",
         "{{NUM_CREDITOS}}": num_cred,
         "{{HORAS_TP}}": horas_tp,
         "{{MODALIDAD}}": modalidad,
@@ -413,7 +453,7 @@ def generar_silabo_curso(db, curso_row):
         "{{INICIO_FIN_SEMESTRE}}": inicio_fin,
         "{{DOCENTE_NOMBRE}}": docente_nombre,
         "{{DOCENTE_CORREO}}": docente_correo,
-        "{{MEET_LINK}}": "",  # si luego guardas enlace meet en BD, se rellena aquí
+        "{{MEET_LINK}}": "",
 
         "{{SUMILLA}}": sumilla,
         "{{PERFIL_EGRESADO}}": prog_conf["perfil_egresado"] or "",
@@ -424,7 +464,7 @@ def generar_silabo_curso(db, curso_row):
     _reemplazar_tokens_en_elemento(doc, mapping)
 
     # 7) Nombre de archivo
-    codigo = curso_row["codigo"] or "SIN_CODIGO"
+    codigo = curso_row.get("codigo") or "SIN_CODIGO"
     docente_slug = limpiar_nombre_archivo(docente_nombre) if docente_nombre else "SIN_DOCENTE"
 
     nombre_archivo = f"SILABO_{codigo}_{docente_slug}.docx"
