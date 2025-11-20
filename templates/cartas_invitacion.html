@@ -6,13 +6,13 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
   <div>
-    <h1 class="mb-1">Cartas de invitación a docentes</h1>
+    <h1 class="mb-1">Cartas de invitación y sílabos</h1>
     <p class="text-muted mb-0">
-      Genera cartas de invitación a partir de la programación de cursos y la plantilla Word.
+      Genera cartas de invitación y, opcionalmente, sílabos en Word a partir de la programación de cursos y las plantillas configuradas.
     </p>
   </div>
   <div class="text-end small text-muted">
-    ✉️ Usa esta sección cuando la programación del período ya esté cerrada y quieras generar cartas masivamente.
+    ✉️ Usa esta sección cuando la programación del período ya esté cerrada y quieras generar documentos masivamente.
   </div>
 </div>
 
@@ -79,23 +79,38 @@
             <div class="form-text">
               Si lo dejas vacío, se usará <code>000</code> en todas las cartas.
             </div>
+
+            <div class="form-check mt-3">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                name="include_silabos"
+                id="include_silabos"
+                checked
+              />
+              <label class="form-check-label" for="include_silabos">
+                Incluir sílabos en el ZIP
+              </label>
+            </div>
           </div>
+
           <div class="col-md-4">
             <div class="border rounded p-2 bg-light small">
               <div class="fw-semibold mb-1">Leyenda de estados:</div>
               <div class="d-flex flex-wrap gap-2">
-                <span class="badge bg-success">✅ Listo para carta</span>
+                <span class="badge bg-success">✅ Listo para generar</span>
                 <span class="badge bg-warning text-dark">⚠️ Falta completar datos</span>
                 <span class="badge bg-secondary">SIN DOCENTE</span>
               </div>
             </div>
           </div>
+
           <div class="col-md-5 text-end">
             <button type="submit" class="btn btn-success">
-              ✉️ Generar cartas seleccionadas
+              📦 Generar documentos seleccionados
             </button>
             <div class="small text-muted mt-1">
-              Solo se generarán cartas para los cursos marcados como “Listo para carta”.
+              Solo se generarán documentos (cartas y, si lo marcas, sílabos) para los cursos en estado “Listo para generar”.
             </div>
           </div>
         </div>
@@ -150,7 +165,7 @@
 
                 {% if tiene_todo %}
                   {% set estado_clase = "bg-success" %}
-                  {% set estado_texto = "✅ Listo para carta" %}
+                  {% set estado_texto = "✅ Listo para generar" %}
                 {% else %}
                   {% set estado_clase = "bg-warning text-dark" %}
                   {% set estado_texto = "⚠️ Falta completar datos" %}

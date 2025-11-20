@@ -31,3 +31,15 @@ try:
 except Exception:
     TRY_PDF_WEB = False
     docx2pdf_convert = None
+
+# ============================
+# Configuración para SÍLABOS
+# ============================
+
+# Carpeta donde se guardan las plantillas de sílabo (.docx)
+PLANTILLAS_SILABO_DIR = BASE_DIR / "plantillas_silabo"
+PLANTILLAS_SILABO_DIR.mkdir(parents=True, exist_ok=True)
+
+# Carpeta donde se guardan los sílabos generados
+CARPETA_SILABOS = BASE_DIR / "silabos_generados"
+CARPETA_SILABOS.mkdir(parents=True, exist_ok=True)

@@ -16,7 +16,7 @@ from utils_programas import (
 
 
 def register_export_routes(app):
-    # Adecuacion de formatos
+    # Adecuación de formatos
     def set_table_font_size(table, size_pt: int):
         """
         Ajusta la fuente de todo el contenido de la tabla al tamaño indicado (en puntos).
@@ -38,15 +38,15 @@ def register_export_routes(app):
         tipo_docente_mes = request.args.get("tipo_docente_mes", "")
         solo_matriculados = request.args.get("solo_matriculados", "") == "1"
         min_matriculados = request.args.get("min_matriculados", "")
+
         try:
-            min_matriculados_int = (
-                int(min_matriculados) if min_matriculados else None
-            )
+            min_matriculados_int = int(min_matriculados) if min_matriculados else None
         except ValueError:
             min_matriculados_int = None
 
         conn = get_db_connection()
 
+        # Si no llega periodo_id, usamos el último periodo creado
         if not periodo_id:
             periodo = conn.execute(
                 "SELECT id FROM periodo ORDER BY anio DESC, mes DESC LIMIT 1"
@@ -112,7 +112,9 @@ def register_export_routes(app):
                 cp.sem2,
                 p.etiqueta AS periodo,
                 p.periodo_academico AS periodo_academico,
-                COALESCE(pp.matriculados, cp.matriculados) AS matriculados
+                COALESCE(pp.matriculados, cp.matriculados) AS matriculados,
+                cp.fusion_grupo,
+                cp.fusion_principal
             FROM curso_programado cp
             LEFT JOIN docente d ON d.id = cp.docente_id
             JOIN programa_academico pa ON pa.id = cp.programa_id
@@ -135,6 +137,8 @@ def register_export_routes(app):
 
         si = StringIO()
         writer = csv.writer(si)
+
+        # Cabecera CSV
         writer.writerow(
             [
                 "Facultad",
@@ -157,9 +161,16 @@ def register_export_routes(app):
                 "Periodo",
                 "Período académico",
                 "Matriculados",
+                "Fusión grupo",
+                "Fusión principal",
             ]
         )
+
         for r in rows:
+            remuneracion_monto = r["remuneracion_monto"]
+            matriculados = r["matriculados"]
+            fusion_principal = r["fusion_principal"]
+
             writer.writerow(
                 [
                     r["facultad"] or "",
@@ -172,8 +183,9 @@ def register_export_routes(app):
                     r["ciclo"] or "",
                     r["asignatura"] or "",
                     r["fechas_texto"] or "",
-                    r["remuneracion_texto"] or "",
-                    r["remuneracion_monto"] or "",
+                    # Convertimos numéricos a string respetando 0
+                    "" if remuneracion_monto is None else str(remuneracion_monto),
+                    "" if remuneracion_monto is None else str(remuneracion_monto),
                     r["poi"] or "",
                     r["codigo"] or "",
                     r["categoria"] or "",
@@ -181,7 +193,9 @@ def register_export_routes(app):
                     r["sem2"] or "",
                     r["periodo"] or "",
                     r["periodo_academico"] or "",
-                    r["matriculados"] or "",
+                    "" if matriculados is None else str(matriculados),
+                    r["fusion_grupo"] or "",
+                    "" if fusion_principal is None else str(fusion_principal),
                 ]
             )
 
@@ -214,7 +228,6 @@ def register_export_routes(app):
             if r is None:
                 return None
 
-            # Si viniera como dict normal
             if isinstance(r, dict):
                 return r.get(key)
 
@@ -230,6 +243,90 @@ def register_export_routes(app):
                 return val
 
         return _get("universidad_procedencia") or ""
+
+    def procesar_fusiones(rows):
+        """
+        Recibe una lista de dicts con los campos, incluyendo (si existen):
+          - fusion_grupo
+          - fusion_principal (1 si es curso "principal" del grupo, 0 si es secundario)
+
+        Retorna una nueva lista de rows donde:
+        - Los cursos sin fusion_grupo se dejan igual.
+        - Los cursos con el mismo fusion_grupo se combinan:
+          * Se elige un curso principal (fusion_principal=1, o el primero si ninguno está marcado).
+          * Se suman los matriculados de todo el grupo.
+          * Se añade una nota en observaciones indicando qué asignaturas se fusionan.
+        """
+        sin_fusion = []
+        grupos = {}
+
+        for r in rows:
+            fg = (r.get("fusion_grupo") or "").strip()
+            fp = r.get("fusion_principal")
+
+            if not fg:
+                sin_fusion.append(r)
+                continue
+
+            g = grupos.setdefault(fg, {"principales": [], "otros": []})
+            if fp in (1, "1", True, "TRUE", "true"):
+                g["principales"].append(r)
+            else:
+                g["otros"].append(r)
+
+        resultado = list(sin_fusion)
+
+        for fg, g in grupos.items():
+            principales = g["principales"] or g["otros"]
+            otros = g["otros"]
+
+            if not principales:
+                # Caso raro: solo cursos sin principal claramente marcado
+                resultado.extend(otros)
+                continue
+
+            destino = principales[0]
+            combinado = dict(destino)
+
+            # Construir mensaje de fusión
+            nombres_origen = sorted(
+                {
+                    (o.get("asignatura") or "").strip()
+                    for o in otros
+                    if o.get("asignatura")
+                }
+            )
+            if nombres_origen:
+                msg_fusion = (
+                    f"FUSIÓN ({fg}): integra también "
+                    + ", ".join(nombres_origen)
+                    + "."
+                )
+            else:
+                msg_fusion = f"FUSIÓN ({fg})."
+
+            obs_actual = (combinado.get("observaciones") or "").strip()
+            if obs_actual:
+                combinado["observaciones"] = obs_actual + " | " + msg_fusion
+            else:
+                combinado["observaciones"] = msg_fusion
+
+            # Sumar matriculados de todo el grupo (incluye principal + otros)
+            try:
+                total_m = 0
+                for r_g in principales + otros:
+                    m = r_g.get("matriculados")
+                    if m is not None:
+                        total_m += int(m)
+                if total_m:
+                    combinado["matriculados"] = total_m
+            except Exception:
+                # Si algo falla, dejamos el valor original de destino
+                pass
+
+            resultado.append(combinado)
+
+        return resultado
 
     @app.route("/export/programacion.docx")
     def export_programacion_docx():
@@ -247,6 +344,10 @@ def register_export_routes(app):
         col_matriculados = request.args.get("col_matriculados") == "1"
         solo_matriculados = request.args.get("solo_matriculados") == "1"
         min_matriculados = request.args.get("min_matriculados", "")
+
+        # NUEVO: checkbox para decidir si se combinan cursos fusionados
+        incluir_fusiones = request.args.get("incluir_fusiones") == "1"
+
         try:
             min_matriculados_int = (
                 int(min_matriculados) if min_matriculados else None
@@ -328,7 +429,9 @@ def register_export_routes(app):
                 cp.observaciones,
                 p.etiqueta AS periodo_etiqueta,
                 p.periodo_academico AS periodo_academico,
-                COALESCE(pp.matriculados, cp.matriculados) AS matriculados
+                COALESCE(pp.matriculados, cp.matriculados) AS matriculados,
+                cp.fusion_grupo,
+                cp.fusion_principal
             FROM curso_programado cp
             LEFT JOIN docente d ON d.id = cp.docente_id
             JOIN programa_academico pa ON pa.id = cp.programa_id
@@ -347,13 +450,16 @@ def register_export_routes(app):
                 cp.ciclo
         """
 
-        rows = conn.execute(sql, params).fetchall()
+        rows_db = conn.execute(sql, params).fetchall()
+
+        # Convertimos a dict para manejar fusiones de forma más cómoda
+        rows = [dict(r) for r in rows_db]
 
         periodo_etiqueta = ""
         periodo_academico = ""
         if rows:
-            periodo_etiqueta = rows[0]["periodo_etiqueta"]
-            periodo_academico = rows[0]["periodo_academico"] or ""
+            periodo_etiqueta = rows[0].get("periodo_etiqueta") or ""
+            periodo_academico = rows[0].get("periodo_academico") or ""
         else:
             if periodo_id:
                 row = conn.execute(
@@ -367,12 +473,18 @@ def register_export_routes(app):
 
         conn.close()
 
+        # Procesar fusiones para que el DOCX no duplique cursos fusionados
+        if incluir_fusiones:
+            rows_docx = procesar_fusiones(rows)
+        else:
+            rows_docx = rows
+
         # Separar locales vs ordinarizados
         locales = []
         ordin = []
 
-        for r in rows:
-            tipo_mes = (r["tipo_docente_mes"] or "").upper()
+        for r in rows_docx:
+            tipo_mes = (r.get("tipo_docente_mes") or "").upper()
             if tipo_mes == "ORDINARIZADO":
                 ordin.append(r)
             else:
@@ -381,15 +493,15 @@ def register_export_routes(app):
         locales_grouped = agrupar_por_facultad_y_programa_base(locales)
 
         def _sort_key_ordin(r):
-            facultad = r["facultad"] or ""
-            programa = r["programa"] or ""
-            tipo_prog = (r["tipo_programa"] or "").upper()
+            facultad = r.get("facultad") or ""
+            programa = r.get("programa") or ""
+            tipo_prog = (r.get("tipo_programa") or "").upper()
             programa_base = normalizar_programa_base(programa, tipo_prog)
             return (
                 facultad_sort_key(facultad),
                 programa_sort_key(programa_base),
-                (r["docente"] or "").lower(),
-                r["ciclo"] or "",
+                (r.get("docente") or "").lower(),
+                r.get("ciclo") or "",
             )
 
         ordin_sorted = sorted(ordin, key=_sort_key_ordin)
@@ -498,8 +610,8 @@ def register_export_routes(app):
                     cursos_prog_ordenados = sorted(
                         cursos_prog,
                         key=lambda r: (
-                            (r["ciclo"] or ""),
-                            (r["docente"] or "").lower(),
+                            (r.get("ciclo") or ""),
+                            (r.get("docente") or "").lower(),
                         ),
                     )
 
@@ -507,44 +619,39 @@ def register_export_routes(app):
                         row_cells = table.add_row().cells
                         row_cells[0].text = f"{n:02d}"
 
-                        # Docente + universidad de mayor grado con espacio (línea en blanco) entre ambos
-                        docente_nombre = rdata["docente"] or ""
+                        # Docente + universidad de mayor grado (con espacio en blanco entre ambos)
+                        docente_nombre = rdata.get("docente") or ""
                         universidad_mayor = pick_universidad(rdata)
 
                         cell_docente = row_cells[1]
-                        # Limpiar contenido actual
                         cell_docente.text = ""
 
-                        # Primer párrafo: nombre del docente
                         p_nombre = cell_docente.paragraphs[0]
                         p_nombre.add_run(docente_nombre)
 
                         if universidad_mayor:
-                            # Segundo párrafo: línea en blanco (espacio visual entre nombre y universidad)
-                            cell_docente.add_paragraph("")
-
-                            # Tercer párrafo: universidad
+                            cell_docente.add_paragraph("")  # línea en blanco
                             p_uni = cell_docente.add_paragraph()
                             p_uni.add_run(universidad_mayor)
 
-                        row_cells[2].text = rdata["programa"] or ""
-                        row_cells[3].text = rdata["ciclo"] or ""
-                        row_cells[4].text = rdata["asignatura"] or ""
-                        row_cells[5].text = rdata["fechas_texto"] or ""
-                        row_cells[6].text = rdata["remuneracion_texto"] or ""
-                        row_cells[7].text = rdata["poi"] or ""
-                        row_cells[8].text = rdata["dni"] or ""
+                        row_cells[2].text = rdata.get("programa") or ""
+                        row_cells[3].text = rdata.get("ciclo") or ""
+                        row_cells[4].text = rdata.get("asignatura") or ""
+                        row_cells[5].text = rdata.get("fechas_texto") or ""
+                        row_cells[6].text = rdata.get("remuneracion_texto") or ""
+                        row_cells[7].text = rdata.get("poi") or ""
+                        row_cells[8].text = rdata.get("dni") or ""
 
                         col_idx = 9
                         if col_matriculados:
                             row_cells[col_idx].text = str(
-                                rdata["matriculados"] or ""
+                                rdata.get("matriculados") or ""
                             )
                             col_idx += 1
 
                         if col_observaciones:
                             row_cells[col_idx].text = (
-                                rdata["observaciones"] or ""
+                                rdata.get("observaciones") or ""
                             )
                             col_idx += 1
                         if col_universidad:
@@ -552,23 +659,22 @@ def register_export_routes(app):
                             col_idx += 1
                         if col_telefono:
                             row_cells[col_idx].text = (
-                                rdata["telefono"] or ""
+                                rdata.get("telefono") or ""
                             )
                             col_idx += 1
                         if col_correo:
                             row_cells[col_idx].text = (
-                                rdata["correo"] or ""
+                                rdata.get("correo") or ""
                             )
                             col_idx += 1
                         if col_direccion:
                             row_cells[col_idx].text = (
-                                rdata["direccion"] or ""
+                                rdata.get("direccion") or ""
                             )
 
                         n += 1
 
                     set_table_font_size(table, 8)
-
                     docx.add_paragraph("")
 
             return n
@@ -623,7 +729,7 @@ def register_export_routes(app):
                 row_cells = table.add_row().cells
                 row_cells[0].text = f"{n:02d}"
 
-                docente_nombre = rdata["docente"] or ""
+                docente_nombre = rdata.get("docente") or ""
                 universidad_mayor = pick_universidad(rdata)
 
                 cell_docente = row_cells[1]
@@ -637,43 +743,42 @@ def register_export_routes(app):
                     p_uni = cell_docente.add_paragraph()
                     p_uni.add_run(universidad_mayor)
 
-                row_cells[2].text = rdata["programa"] or ""
-                row_cells[3].text = rdata["ciclo"] or ""
-                row_cells[4].text = rdata["asignatura"] or ""
-                row_cells[5].text = rdata["fechas_texto"] or ""
-                row_cells[6].text = rdata["remuneracion_texto"] or ""
-                row_cells[7].text = rdata["poi"] or ""
-                row_cells[8].text = rdata["dni"] or ""
+                row_cells[2].text = rdata.get("programa") or ""
+                row_cells[3].text = rdata.get("ciclo") or ""
+                row_cells[4].text = rdata.get("asignatura") or ""
+                row_cells[5].text = rdata.get("fechas_texto") or ""
+                row_cells[6].text = rdata.get("remuneracion_texto") or ""
+                row_cells[7].text = rdata.get("poi") or ""
+                row_cells[8].text = rdata.get("dni") or ""
 
                 col_idx = 9
                 if col_matriculados:
                     row_cells[col_idx].text = str(
-                        rdata["matriculados"] or ""
+                        rdata.get("matriculados") or ""
                     )
                     col_idx += 1
                 if col_observaciones:
                     row_cells[col_idx].text = (
-                        rdata["observaciones"] or ""
+                        rdata.get("observaciones") or ""
                     )
                     col_idx += 1
                 if col_universidad:
                     row_cells[col_idx].text = pick_universidad(rdata)
                     col_idx += 1
                 if col_telefono:
-                    row_cells[col_idx].text = rdata["telefono"] or ""
+                    row_cells[col_idx].text = rdata.get("telefono") or ""
                     col_idx += 1
                 if col_correo:
-                    row_cells[col_idx].text = rdata["correo"] or ""
+                    row_cells[col_idx].text = rdata.get("correo") or ""
                     col_idx += 1
                 if col_direccion:
                     row_cells[col_idx].text = (
-                        rdata["direccion"] or ""
+                        rdata.get("direccion") or ""
                     )
 
                 n += 1
 
             set_table_font_size(table, 8)
-            
             docx.add_paragraph("")
             return n
 
@@ -684,7 +789,7 @@ def register_export_routes(app):
                 doc, "DOCENTES ORDINARIZADOS", ordin_sorted, contador
             )
 
-        if not rows:
+        if not rows_docx:
             doc.add_paragraph(
                 "No hay cursos programados para el período seleccionado."
             )

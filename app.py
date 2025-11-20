@@ -11,7 +11,7 @@ from routes.programacion import register_programacion_routes
 from routes.export_routes import register_export_routes
 from routes.cartas import register_cartas_routes
 from routes.programas import register_programas_routes  # NUEVO
-
+from routes.silabos import bp as silabos_bp
 
 def create_app():
     app = Flask(__name__)
@@ -31,7 +31,7 @@ def create_app():
 
     # Rutas del reporte SUNEDU
     register_sunedu_routes(app, get_db_connection)
-
+    app.register_blueprint(silabos_bp)
     return app
 
 

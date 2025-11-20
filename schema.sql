@@ -75,7 +75,7 @@ CREATE TABLE docente (
   -- Datos básicos
   especialidad TEXT,
   dni TEXT UNIQUE,                   -- N° DE DNI / CARNET DE EXTRANJERÍA
-  pais_nacionalidad TEXT,           -- PAÍS (NACIONALIDAD)
+  pais_nacionalidad TEXT,            -- PAÍS (NACIONALIDAD)
   direccion TEXT,
   correo TEXT,
   telefono TEXT,
@@ -203,12 +203,16 @@ CREATE TABLE curso_programado (
   tipo_docente_mes TEXT,
   estado_programacion TEXT DEFAULT 'PROPUESTO',
 
-  observaciones TEXT,               -- Ya la tenías, la mantenemos
+  observaciones TEXT,               -- Ya la tenías
 
   codigo TEXT,
   categoria TEXT,
   sem1 TEXT,
   sem2 TEXT,
+
+  -- 🔹 NUEVO: soporte para cursos fusionados
+  fusion_grupo TEXT,                -- Identificador común para los cursos fusionados
+  fusion_principal INTEGER NOT NULL DEFAULT 1, -- 1 si este curso es el "base" para cartas/reportes
 
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
@@ -293,4 +297,68 @@ CREATE TABLE docente_sugerido_curso (
   UNIQUE (docente_id, curso_id),
   FOREIGN KEY (docente_id) REFERENCES docente(id),
   FOREIGN KEY (curso_id) REFERENCES curso_programado(id)
+);
+
+-- =====================================================
+-- NUEVO: CONFIGURACIÓN DE SÍLABOS POR PROGRAMA
+-- =====================================================
+DROP TABLE IF EXISTS silabo_programa_config;
+
+CREATE TABLE silabo_programa_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  programa_id INTEGER NOT NULL UNIQUE,   -- FK a programa_academico.id
+
+  -- Nombre del programa para mostrar en el sílabo (encabezado)
+  nombre_programa TEXT NOT NULL,         -- Ej: "DOCTORADO EN ADMINISTRACIÓN"
+
+  -- Plantilla específica de Word para este programa
+  plantilla_archivo TEXT,                -- Ej: "doctorado_administracion_silabo.docx"
+
+  -- Datos generales típicos del programa
+  numero_creditos INTEGER NOT NULL DEFAULT 4,
+  horas_teoricas INTEGER NOT NULL DEFAULT 40,
+  horas_practicas INTEGER NOT NULL DEFAULT 48,
+
+  -- Modalidad predominante (puede sobreescribirse por curso)
+  modalidad_default TEXT,                -- "PRESENCIAL" | "A DISTANCIA" | "MIXTA"
+
+  -- Horario tipo (si aplica)
+  horario_texto TEXT,                    -- Ej: "vie. 17:00 a 22:00; sáb. 8:00 a 13:00..."
+
+  -- Fechas del semestre (texto libre)
+  inicio_semestre TEXT,                  -- Ej: "1 de agosto de 2025"
+  fin_semestre TEXT,                     -- Ej: "31 de diciembre de 2025"
+
+  -- Sección 3: perfil del egresado
+  perfil_egresado TEXT NOT NULL,         -- Texto largo
+
+  -- Tabla 1: competencias y resultados de aprendizaje (puede ir como bloque de texto)
+  resultados_aprendizaje TEXT,
+
+  observaciones TEXT,
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  FOREIGN KEY (programa_id) REFERENCES programa_academico(id)
+);
+
+-- =====================================================
+-- NUEVO: SUMILLAS BASE POR CURSO (POR PROGRAMA)
+-- =====================================================
+DROP TABLE IF EXISTS silabo_curso_base;
+
+CREATE TABLE silabo_curso_base (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  programa_id INTEGER NOT NULL,         -- FK a programa_academico.id
+  codigo TEXT NOT NULL,                 -- Ej: "DM02"
+  asignatura TEXT NOT NULL,             -- Ej: "ANALISIS DE INVERSIONES"
+
+  sumilla TEXT NOT NULL,                -- Texto de la sumilla del curso
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+
+  UNIQUE (programa_id, codigo),
+  FOREIGN KEY (programa_id) REFERENCES programa_academico(id)
 );

@@ -72,14 +72,14 @@ def register_programacion_routes(app):
             params.append(tipo_docente_mes)
 
         if solo_matriculados:
+            # Solo cursos cuyos programas tienen matriculados (> 0)
             filtros.append(
-                "(COALESCE(pp.matriculados, cp.matriculados) IS NOT NULL "
-                "AND COALESCE(pp.matriculados, cp.matriculados) > 0)"
+                "(pp.matriculados IS NOT NULL AND pp.matriculados > 0)"
             )
 
         if min_matriculados_int is not None:
             filtros.append(
-                "(COALESCE(pp.matriculados, cp.matriculados) >= ?)"
+                "(pp.matriculados IS NOT NULL AND pp.matriculados >= ?)"
             )
             params.append(min_matriculados_int)
 
@@ -105,7 +105,7 @@ def register_programacion_routes(app):
                 cp.poi,
                 cp.observaciones,
                 pa.id AS programa_id,
-                COALESCE(pp.matriculados, cp.matriculados) AS matriculados,
+                pp.matriculados AS matriculados,
                 COALESCE(dsc.sugeridos_count, 0) AS cantidad_sugeridos
             FROM curso_programado cp
             JOIN programa_academico pa ON cp.programa_id = pa.id

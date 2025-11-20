@@ -1,18 +1,27 @@
 # routes/cartas.py
 from flask import render_template, request, redirect, url_for, flash, send_file
 from db import get_db_connection
-from config import CARTAS_OUTPUT_DIR, PLANTILLA_CARTA, TRY_PDF_WEB, docx2pdf_convert
+from config import (
+    CARTAS_OUTPUT_DIR,
+    PLANTILLA_CARTA,
+    TRY_PDF_WEB,
+    docx2pdf_convert,
+)
 from docxtpl import DocxTemplate
 from generar_cartas import (
     fecha_larga_es,
     calc_remuneracion,
     limpiar_nombre_archivo,
+    extraer_paterno_y_nombre,     # compatibilidad CLI
+    separar_titulo_y_nombre,      # idem
     extraer_titulo_paterno_nombre,
     MESES_ES,
+    generar_silabo_curso,         # generador de sílabos
 )
 from utils_programas import normalizar_programa_base
 from io import BytesIO
 import zipfile
+import os
 
 
 def register_cartas_routes(app):
@@ -23,7 +32,9 @@ def register_cartas_routes(app):
         Vista para:
         - Elegir período
         - Ver cursos programados y estado de datos para carta
-        - Seleccionar cursos y generar cartas .docx/.pdf (ZIP)
+        - Seleccionar cursos y generar documentos .docx/.pdf (ZIP):
+          * Siempre cartas
+          * Opcionalmente, sílabos (según checkbox include_silabos)
         """
         conn = get_db_connection()
         cur = conn.cursor()
@@ -64,7 +75,7 @@ def register_cartas_routes(app):
                 cursos=cursos,
             )
 
-        # -------- POST: generar cartas --------
+        # -------- POST: generar cartas (y opcionalmente sílabos) --------
         if not PLANTILLA_CARTA.exists():
             conn.close()
             flash(
@@ -77,7 +88,7 @@ def register_cartas_routes(app):
         selected_ids = request.form.getlist("curso_id")
         if not selected_ids:
             conn.close()
-            flash("No seleccionaste ningún curso para generar cartas.", "warning")
+            flash("No seleccionaste ningún curso para generar documentos.", "warning")
             return redirect(url_for("cartas_invitacion", periodo_id=periodo_id))
 
         # N° de carta inicial (opcional)
@@ -86,6 +97,9 @@ def register_cartas_routes(app):
             next_num = int(start_num_str) if start_num_str else None
         except ValueError:
             next_num = None
+
+        # Checkbox: incluir sílabos
+        include_silabos = bool(request.form.get("include_silabos"))
 
         # Info del período (para carpeta)
         periodo_row = None
@@ -100,13 +114,15 @@ def register_cartas_routes(app):
         rows = cur.execute(
             f"""
             SELECT cp.*,
-                   d.nombre_completo AS docente_nombre,
-                   pa.nombre_corto   AS programa_nombre,
-                   pa.tipo           AS programa_tipo,
-                   pa.modalidad      AS programa_modalidad,
-                   pe.anio           AS periodo_anio,
-                   pe.mes            AS periodo_mes,
-                   pe.etiqueta       AS periodo_etiqueta
+                d.nombre_completo AS docente_nombre,
+                d.correo          AS docente_correo,
+                pa.nombre_corto   AS programa_nombre,
+                pa.tipo           AS programa_tipo,
+                pa.modalidad      AS programa_modalidad,
+                pe.anio           AS periodo_anio,
+                pe.mes            AS periodo_mes,
+                pe.etiqueta       AS periodo_etiqueta,
+                pe.periodo_academico AS periodo_academico
             FROM curso_programado cp
             JOIN programa_academico pa ON pa.id = cp.programa_id
             JOIN periodo pe ON pe.id = cp.periodo_id
@@ -119,7 +135,7 @@ def register_cartas_routes(app):
 
         if not rows:
             conn.close()
-            flash("No se encontraron cursos para generar cartas.", "danger")
+            flash("No se encontraron cursos para generar documentos.", "danger")
             return redirect(url_for("cartas_invitacion", periodo_id=periodo_id))
 
         # Carpeta específica del período
@@ -146,10 +162,11 @@ def register_cartas_routes(app):
                 programa_tipo = (row["programa_tipo"] or "").upper()
                 programa_modalidad = (row["programa_modalidad"] or "").strip()
 
-                # Programa base (texto)
-                programa_base = normalizar_programa_base(
-                    programa_nombre, programa_tipo
-                )
+                # Carpeta interna por docente en el ZIP
+                docente_folder = limpiar_nombre_archivo(docente) or "DOCENTE_POR_DEFINIR"
+
+                # Programa base (texto para la carta)
+                programa_base = normalizar_programa_base(programa_nombre, programa_tipo)
                 if programa_tipo == "DOCTORADO":
                     programa_texto = f"del {programa_base}"
                 elif programa_tipo == "MAESTRIA":
@@ -171,11 +188,11 @@ def register_cartas_routes(app):
                 sem1 = row["sem1"] or ""
                 sem2 = row["sem2"] or ""
 
-                # Fecha larga SIEMPRE actual
+                # Fecha larga (hoy)
                 fecha_larga, anio = fecha_larga_es(None)
                 ciudad = "Cusco"
 
-                # MES en la tabla: a partir de periodo.anio / periodo.mes
+                # Mes [TABLA] a partir de periodo.anio / periodo.mes
                 anio_periodo = row["periodo_anio"] or periodo_anio_default
                 mes_periodo = row["periodo_mes"] or periodo_mes_default
 
@@ -189,33 +206,29 @@ def register_cartas_routes(app):
                     mes_tabla = ""
 
                 if not mes_tabla:
-                    # Fallback: etiqueta de periodo en mayúsculas
-                    periodo_etiqueta_row = (
-                        row["periodo_etiqueta"] or etiqueta_periodo
-                    )
+                    periodo_etiqueta_row = row["periodo_etiqueta"] or etiqueta_periodo
                     mes_tabla = (periodo_etiqueta_row or "").upper()
 
-                # Remuneración por tabla (o override explícito)
+                # Remuneración
                 override = None
                 if row["remuneracion_monto"] is not None:
                     override = str(row["remuneracion_monto"])
                 remuneracion_num = calc_remuneracion(programa_texto, override)
                 remuneracion = remuneracion_num
 
-                # Numeración de carta con ceros a la izquierda
+                # Numeración de carta
                 if next_num is not None:
                     numero = f"{next_num:03d}"
                     next_num += 1
                 else:
-                    # Si no se indicó inicio, usamos "000"
                     numero = "000"
 
-                titulo = ""  # si luego quieres "Dr." etc., se puede usar aquí
+                titulo = ""
 
                 context = {
                     "ciudad": ciudad,
                     "fecha_larga": fecha_larga,
-                    "numero": numero,      # se usará en la plantilla: CARTA Nº {{ numero }}-{{ anio }}-EPG-UAC
+                    "numero": numero,
                     "anio": anio,
                     "titulo": titulo,
                     "docente": docente,
@@ -235,11 +248,10 @@ def register_cartas_routes(app):
                     "remuneracion": remuneracion,
                 }
 
-                # Render de la plantilla DOCX
+                # === 1) Generar CARTA DOCX ===
                 tpl = DocxTemplate(str(PLANTILLA_CARTA))
                 tpl.render(context)
 
-                # Nombre de archivo: "CARTA N°{numero} {TITULO} {PATERNO} {NOMBRE}.docx"
                 titulo_abrev, paterno, nombre = extraer_titulo_paterno_nombre(docente)
 
                 if titulo_abrev:
@@ -248,39 +260,65 @@ def register_cartas_routes(app):
                     file_stub = f"CARTA N°{numero} {paterno} {nombre}"
 
                 filename_docx = limpiar_nombre_archivo(file_stub) + ".docx"
-
                 out_path = output_dir / filename_docx
                 tpl.save(out_path)
 
-                # Agregamos DOCX al ZIP
+                # Agregar carta DOCX al ZIP dentro de la carpeta del docente
                 with open(out_path, "rb") as f:
-                    zf.writestr(filename_docx, f.read())
+                    zip_name_carta = f"{docente_folder}/{filename_docx}"
+                    zf.writestr(zip_name_carta, f.read())
 
-                # Opcional: PDF
+                # Opcional: PDF de la carta
                 if TRY_PDF_WEB and docx2pdf_convert is not None:
                     try:
                         out_pdf_path = out_path.with_suffix(".pdf")
-
-                        # Intentar inicializar COM explícitamente en Windows
                         try:
-                            import pythoncom  # requiere pywin32
+                            import pythoncom  # requiere pywin32 en Windows
                             pythoncom.CoInitialize()
                             try:
                                 docx2pdf_convert(str(out_path), str(out_pdf_path))
                             finally:
                                 pythoncom.CoUninitialize()
                         except ImportError:
-                            # Si no está pythoncom, igual intentamos la conversión directa
+                            # Si no está pythoncom, intentamos la conversión directa
                             docx2pdf_convert(str(out_path), str(out_pdf_path))
 
-                        # Agregar PDF al ZIP
                         with open(out_pdf_path, "rb") as fpdf:
-                            zf.writestr(out_pdf_path.name, fpdf.read())
+                            zip_name_pdf = f"{docente_folder}/{out_pdf_path.name}"
+                            zf.writestr(zip_name_pdf, fpdf.read())
+                    except Exception as e:
+                        print(f"[Aviso] No se pudo generar PDF para {out_path.name}: {e}")
 
+                # === 2) Generar SÍLABO para este curso (si está habilitado y la config existe) ===
+                if include_silabos:
+                    try:
+                        curso_row = dict(row)  # Row -> dict
+
+                        # Aseguramos algunas claves que usa generar_silabo_curso
+                        curso_row["programa_nombre"] = programa_nombre
+                        curso_row["docente_nombre"] = docente
+                        curso_row["docente_correo"] = row["docente_correo"] or ""
+                        # periodo_academico ya está en row; si no, usamos etiqueta
+                        if not curso_row.get("periodo_academico"):
+                            curso_row["periodo_academico"] = (
+                                row["periodo_academico"] or row["periodo_etiqueta"]
+                            )
+
+                        silabo_path = generar_silabo_curso(conn, curso_row)
+                        silabo_filename = os.path.basename(silabo_path)
+
+                        with open(silabo_path, "rb") as fs:
+                            zip_name_silabo = f"{docente_folder}/{silabo_filename}"
+                            zf.writestr(zip_name_silabo, fs.read())
+
+                    except RuntimeError as e:
+                        # Típico caso: no hay silabo_programa_config para ese programa
+                        print(
+                            f"[Aviso] No se pudo generar sílabo para curso {row['id']}: {e}"
+                        )
                     except Exception as e:
                         print(
-                            f"[Aviso] No se pudo generar PDF para "
-                            f"{out_path.name}: {e}"
+                            f"[Aviso] Error inesperado generando sílabo para curso {row['id']}: {e}"
                         )
 
         conn.close()
@@ -290,9 +328,10 @@ def register_cartas_routes(app):
             f"cartas_invitacion_{etiqueta_periodo.replace(' ', '_')}.zip"
         )
 
+        detalle = "Cartas y sílabos" if include_silabos else "Cartas"
         flash(
-            f"Cartas generadas correctamente en la carpeta '{subdir_name}' "
-            f"y descargadas como ZIP (DOCX{', PDF' if TRY_PDF_WEB else ''}) ✅",
+            f"{detalle} generados correctamente en la carpeta '{subdir_name}' "
+            f"y descargados como ZIP (DOCX{', PDF' if TRY_PDF_WEB else ''}) ✅",
             "success",
         )
         return send_file(

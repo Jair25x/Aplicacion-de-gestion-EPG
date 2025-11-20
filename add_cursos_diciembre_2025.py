@@ -42,43 +42,86 @@ def parse_monto(monto_str: Optional[str]) -> Optional[float]:
         return None
 
 
-def split_sem1_sem2(fechas_texto: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+def split_sem1_sem2(fechas_texto: str):
     """
-    '05, 06, 07, 19, 20 y 21 de diciembre 2025' ->
-      sem1='05, 06 y 07 de diciembre 2025'
-      sem2='19, 20 y 21 de diciembre 2025'
-    - Si hay >=4 días, parte por mitades (mitad inferior y superior).
-    - Conserva el sufijo a partir de la primera ocurrencia de ' de ' (p. ej., 'de diciembre 2025').
-    - Si no puede partir, retorna (None, None).
+    Divide el texto de fechas en sem1 y sem2.
+
+    Ejemplos de entrada:
+      "05, 06, 07, 19, 20 y 21 de diciembre 2025"
+      "12,13,14, 26,27 y 28 de diciembre 2025"
+
+    Regla general:
+      - 1 a 3 fechas  -> todas en sem1, sem2 vacío
+      - 4 fechas      -> 2 y 2
+      - 5 fechas      -> 3 y 2
+      - 6 o más fechas-> 3 y (resto)
+
+    El sufijo ("de diciembre 2025") se conserva en ambos.
     """
     if not fechas_texto:
-        return None, None
+        return "", ""
 
-    dias = re.findall(r"\d{1,2}", fechas_texto)
-    if len(dias) < 4:
-        return None, None
+    texto = fechas_texto.strip()
 
-    mid = len(dias) // 2
-    dias_sem1 = dias[:mid]
-    dias_sem2 = dias[mid:]
+    # 1) Separar la parte de días del sufijo "de <mes> ..."
+    m = re.search(r"\sde\s", texto)
+    if m:
+        # Parte de días, ej: "05, 06, 07, 19, 20 y 21"
+        dias_part = texto[: m.start()].strip()
+        # Sufijo, ej: "de diciembre 2025" (sin espacios extra)
+        sufijo = texto[m.start():].strip()
+    else:
+        # Si no encontramos " de ", trabajamos todo como días y sin sufijo.
+        dias_part = texto
+        sufijo = ""
 
-    sufijo = ""
-    pos = fechas_texto.lower().find(" de ")
-    if pos != -1:
-        sufijo = fechas_texto[pos:].strip()
+    # 2) Normalizar " y " a coma para facilitar el split
+    dias_norm = dias_part.replace(" y ", ", ")
+    # Ahora spliteamos por coma
+    tokens = [t.strip() for t in dias_norm.split(",") if t.strip()]
 
-    def formatear(bloque: List[str]) -> Optional[str]:
-        if not bloque:
-            return None
-        if len(bloque) == 1:
-            cuerpo = bloque[0]
-        elif len(bloque) == 2:
-            cuerpo = f"{bloque[0]} y {bloque[1]}"
-        else:
-            cuerpo = ", ".join(bloque[:-1]) + f" y {bloque[-1]}"
-        return f"{cuerpo} {sufijo}".strip() if sufijo else cuerpo
+    if not tokens:
+        return "", ""
 
-    return formatear(dias_sem1), formatear(dias_sem2)
+    n = len(tokens)
+
+    # 3) Decidir cómo partimos sem1 / sem2 según la cantidad
+    if n <= 3:
+        sem1_tokens = tokens
+        sem2_tokens = []
+    elif n == 4:
+        sem1_tokens = tokens[:2]
+        sem2_tokens = tokens[2:]
+    elif n == 5:
+        sem1_tokens = tokens[:3]
+        sem2_tokens = tokens[3:]
+    else:  # n >= 6
+        sem1_tokens = tokens[:3]
+        sem2_tokens = tokens[3:]
+
+    def formatear(lista):
+        if not lista:
+            return ""
+        if not sufijo:
+            # Sin sufijo (caso extremo)
+            if len(lista) == 1:
+                return lista[0]
+            if len(lista) == 2:
+                return f"{lista[0]} y {lista[1]}"
+            return f"{', '.join(lista[:-1])} y {lista[-1]}"
+
+        # Con sufijo, ej: "de diciembre 2025"
+        if len(lista) == 1:
+            return f"{lista[0]} {sufijo}"
+        if len(lista) == 2:
+            return f"{lista[0]} y {lista[1]} {sufijo}"
+        # 3 o más
+        return f"{', '.join(lista[:-1])} y {lista[-1]} {sufijo}"
+
+    sem1 = formatear(sem1_tokens)
+    sem2 = formatear(sem2_tokens)
+
+    return sem1, sem2
 
 
 # ============================
