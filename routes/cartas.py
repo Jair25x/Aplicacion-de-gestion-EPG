@@ -35,6 +35,10 @@ def register_cartas_routes(app):
         - Seleccionar cursos y generar documentos .docx/.pdf (ZIP):
           * Siempre cartas
           * Opcionalmente, sílabos (según checkbox include_silabos)
+
+        IMPORTANTE (nuevo):
+        - Se generan cartas aunque falten datos. Si falta docente, se deja línea
+          para completar manualmente y el archivo queda marcado como SIN_DOCENTE.
         """
         conn = get_db_connection()
         cur = conn.cursor()
@@ -156,14 +160,25 @@ def register_cartas_routes(app):
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for row in rows:
-                docente = row["docente_nombre"] or "DOCENTE POR DEFINIR"
-                asignatura = row["asignatura"]
+                # -----------------------------
+                # Datos base del curso
+                # -----------------------------
+                docente_real = (row["docente_nombre"] or "").strip()
+                asignatura = row["asignatura"] or ""
                 programa_nombre = row["programa_nombre"] or ""
                 programa_tipo = (row["programa_tipo"] or "").upper()
                 programa_modalidad = (row["programa_modalidad"] or "").strip()
 
-                # Carpeta interna por docente en el ZIP
-                docente_folder = limpiar_nombre_archivo(docente) or "DOCENTE_POR_DEFINIR"
+                # 1) Texto docente en carta:
+                # Si falta docente, dejamos una línea para completar a mano.
+                docente_carta = docente_real if docente_real else "______________________________"
+
+                # 2) Carpeta interna del ZIP:
+                docente_folder = (
+                    limpiar_nombre_archivo(docente_real)
+                    if docente_real
+                    else "SIN_DOCENTE"
+                )
 
                 # Programa base (texto para la carta)
                 programa_base = normalizar_programa_base(programa_nombre, programa_tipo)
@@ -213,8 +228,7 @@ def register_cartas_routes(app):
                 override = None
                 if row["remuneracion_monto"] is not None:
                     override = str(row["remuneracion_monto"])
-                remuneracion_num = calc_remuneracion(programa_texto, override)
-                remuneracion = remuneracion_num
+                remuneracion = calc_remuneracion(programa_texto, override)
 
                 # Numeración de carta
                 if next_num is not None:
@@ -231,7 +245,7 @@ def register_cartas_routes(app):
                     "numero": numero,
                     "anio": anio,
                     "titulo": titulo,
-                    "docente": docente,
+                    "docente": docente_carta,  # <-- nuevo
                     "asignatura": asignatura,
                     "programa": programa_texto,
                     "modalidad": modalidad_texto,
@@ -252,12 +266,15 @@ def register_cartas_routes(app):
                 tpl = DocxTemplate(str(PLANTILLA_CARTA))
                 tpl.render(context)
 
-                titulo_abrev, paterno, nombre = extraer_titulo_paterno_nombre(docente)
-
-                if titulo_abrev:
-                    file_stub = f"CARTA N°{numero} {titulo_abrev} {paterno} {nombre}"
+                # Nombre del archivo (nuevo comportamiento)
+                if docente_real:
+                    titulo_abrev, paterno, nombre = extraer_titulo_paterno_nombre(docente_real)
+                    if titulo_abrev:
+                        file_stub = f"CARTA N°{numero} {titulo_abrev} {paterno} {nombre}"
+                    else:
+                        file_stub = f"CARTA N°{numero} {paterno} {nombre}"
                 else:
-                    file_stub = f"CARTA N°{numero} {paterno} {nombre}"
+                    file_stub = f"CARTA N°{numero} SIN_DOCENTE {asignatura}"
 
                 filename_docx = limpiar_nombre_archivo(file_stub) + ".docx"
                 out_path = output_dir / filename_docx
@@ -280,7 +297,6 @@ def register_cartas_routes(app):
                             finally:
                                 pythoncom.CoUninitialize()
                         except ImportError:
-                            # Si no está pythoncom, intentamos la conversión directa
                             docx2pdf_convert(str(out_path), str(out_pdf_path))
 
                         with open(out_pdf_path, "rb") as fpdf:
@@ -292,13 +308,12 @@ def register_cartas_routes(app):
                 # === 2) Generar SÍLABO para este curso (si está habilitado y la config existe) ===
                 if include_silabos:
                     try:
-                        curso_row = dict(row)  # Row -> dict
+                        curso_row = dict(row)
 
-                        # Aseguramos algunas claves que usa generar_silabo_curso
+                        # Aseguramos claves que usa generar_silabo_curso
                         curso_row["programa_nombre"] = programa_nombre
-                        curso_row["docente_nombre"] = docente
+                        curso_row["docente_nombre"] = docente_real or "SIN DOCENTE"
                         curso_row["docente_correo"] = row["docente_correo"] or ""
-                        # periodo_academico ya está en row; si no, usamos etiqueta
                         if not curso_row.get("periodo_academico"):
                             curso_row["periodo_academico"] = (
                                 row["periodo_academico"] or row["periodo_etiqueta"]
@@ -312,7 +327,6 @@ def register_cartas_routes(app):
                             zf.writestr(zip_name_silabo, fs.read())
 
                     except RuntimeError as e:
-                        # Típico caso: no hay silabo_programa_config para ese programa
                         print(
                             f"[Aviso] No se pudo generar sílabo para curso {row['id']}: {e}"
                         )
@@ -324,9 +338,7 @@ def register_cartas_routes(app):
         conn.close()
 
         zip_buffer.seek(0)
-        zip_filename = (
-            f"cartas_invitacion_{etiqueta_periodo.replace(' ', '_')}.zip"
-        )
+        zip_filename = f"cartas_invitacion_{etiqueta_periodo.replace(' ', '_')}.zip"
 
         detalle = "Cartas y sílabos" if include_silabos else "Cartas"
         flash(

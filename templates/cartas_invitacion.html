@@ -9,6 +9,8 @@
     <h1 class="mb-1">Cartas de invitación y sílabos</h1>
     <p class="text-muted mb-0">
       Genera cartas de invitación y, opcionalmente, sílabos en Word a partir de la programación de cursos y las plantillas configuradas.
+      <br>
+      <strong>Nuevo:</strong> puedes generar cartas aunque falten datos (por ejemplo docente). El documento saldrá con espacios en blanco para completar manualmente.
     </p>
   </div>
   <div class="text-end small text-muted">
@@ -50,8 +52,9 @@
         </button>
       </div>
       <div class="col-md-5 text-muted small">
-        <strong>Tip:</strong> primero verifica que los cursos tengan docente, código, categoría y semanas
-        (<code>sem1</code>, <code>sem2</code>). La remuneración se puede calcular automáticamente para maestrías y doctorados si no se registró el monto.
+        <strong>Tip:</strong> si falta docente, código, categoría o semanas,
+        igual puedes generar para completar manualmente luego.
+        La remuneración se calcula automáticamente para maestrías y doctorados si no se registró el monto.
       </div>
     </form>
   </div>
@@ -110,7 +113,7 @@
               📦 Generar documentos seleccionados
             </button>
             <div class="small text-muted mt-1">
-              Solo se generarán documentos (cartas y, si lo marcas, sílabos) para los cursos en estado “Listo para generar”.
+              Puedes seleccionar cursos incompletos. Las cartas se generarán con placeholders para editar a mano.
             </div>
           </div>
         </div>
@@ -178,7 +181,6 @@
                       name="curso_id"
                       value="{{ c.id }}"
                       class="form-check-input"
-                      {% if not tiene_todo %}disabled{% endif %}
                     />
                   </td>
                   <td>
@@ -268,9 +270,7 @@
         document
           .querySelectorAll('input[type="checkbox"][name="curso_id"]')
           .forEach((cb) => {
-            if (!cb.disabled) {
-              cb.checked = checked;
-            }
+            cb.checked = checked;
           });
       });
     }
